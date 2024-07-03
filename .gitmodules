@@ -1,0 +1,3 @@
+[submodule "lib/blue_wrapper"]
+	path = lib/blue_wrapper
+	url = https://github.com/wengwz/blue-wrapper.git
