@@ -89,7 +89,7 @@ module mkTbAxisRdWrLoop (Empty);
                 tLast: last,
                 tUser: 0
             };
-            toDutFifo.enq(axis);
+        toDutFifo.enq(axis);
     endrule
 
     rule reader2dut if(rdBatchCnt > 0);

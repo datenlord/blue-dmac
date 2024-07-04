@@ -46,9 +46,9 @@ endinterface
 (*always_ready, always_enabled*)
 interface RawPcieCfgMgmt#();
     (* result = cfg_mgmt_addr *)                method Bit#(10) cfgMgmtAddr;
-    // (* result = cfg_mgmt_byte_enable *)         method Bit#(4)  cfgMgmtAddr;
-    // (* result = cfg_mgmt_addr *) method Bit#(10) cfgMgmtAddr;
-    // (* result = cfg_mgmt_addr *) method Bit#(10) cfgMgmtAddr;
+    (* result = cfg_mgmt_byte_enable *)         method Bit#(4)  cfgMgmtByteEn;
+    (* result = cfg_mgmt_debug_access *)        method Bool     cfgMgmtAddr;
+    (* result = cfg_mgmt_function_number *)     method Bit#(8)  cfgMgmFuncNum;
     // (* result = cfg_mgmt_addr *) method Bit#(10) cfgMgmtAddr;
     // (* result = cfg_mgmt_addr *) method Bit#(10) cfgMgmtAddr;
     // (* result = cfg_mgmt_addr *) method Bit#(10) cfgMgmtAddr;
