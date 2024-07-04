@@ -16,13 +16,13 @@ endinterface
 
 
 module mkTbAxisRdWrLoop (Empty);
-    Reg#(File) fileIn <- mkRegU();
-    Reg#(File) fileRef <- mkRegU();
-    Reg#(File) fileOut <- mkRegU();
-    Reg#(Bool) initFlag <- mkReg(False);
+    Reg#(File) fileInReg <- mkRegU();
+    Reg#(File) fileRefReg <- mkRegU();
+    Reg#(File) fileOutReg <- mkRegU();
+    Reg#(Bool) initFlagReg <- mkReg(False);
     // Read the file 
-    Reg#(Bool) rdDoneFlag <- mkReg(False);
-    Reg#(UInt#(32)) rdBatchCnt <- mkReg(0);
+    Reg#(Bool) rdDoneFlagReg <- mkReg(False);
+    Reg#(UInt#(32)) rdBatchCntReg <- mkReg(0);
     let rdTotalBytesLen = valueOf(RD_BYTES_LENGTH);
     let rdBatchBytesLen = valueOf(BATCH_BYTES);
     let rdLastBatchBytesLen = rdTotalBytesLen % rdBatchBytesLen;
@@ -33,8 +33,8 @@ module mkTbAxisRdWrLoop (Empty);
     // Control
     Reg#(UInt#(32)) tValidCnt <- mkReg(0);
 
-    rule init(!initFlag);
-        initFlag <= True;
+    rule init(!initFlagReg);
+        initFlagReg <= True;
         File in <- $fopen("test.txt", "rb");
         File refer <- $fopen("ref.txt", "wb");
         File out <- $fopen("out.txt", "wb");
@@ -42,44 +42,44 @@ module mkTbAxisRdWrLoop (Empty);
             $display("ERROR: couldn't open test file");
             $finish;
         end
-        fileIn <= in;
-        fileRef <= refer;
-        fileOut <= out;
+        fileInReg <= in;
+        fileRefReg <= refer;
+        fileOutReg <= out;
     endrule
 
-    rule readfile(initFlag && !rdDoneFlag && rdBatchCnt < fromInteger(rdBatchesNum));
+    rule readfile(initFlagReg && !rdDoneFlagReg && rdBatchCntReg < fromInteger(rdBatchesNum));
         Vector#(BATCH_BYTES, Bit#(8)) getChars = replicate(0);
         Bit#(BATCH_BYTES) keep = 0;
         Bool last = False;
-        if(rdBatchCnt == fromInteger(rdBatchesNum) - 1) begin  
-            for(Integer i = 0; i < rdLastBatchBytesLen; i = i + 1) begin
-                int c <- $fgetc(fileIn);
+        if(rdBatchCntReg == fromInteger(rdBatchesNum) - 1) begin  
+            for(Integer idx = 0; idx < rdLastBatchBytesLen; idx = idx + 1) begin
+                int c <- $fgetc(fileInReg);
                 if(c == -1) begin
-                    $fclose(fileIn);
-                    $fclose(fileRef);
+                    $fclose(fileInReg);
+                    $fclose(fileRefReg);
                 end else begin
-                    $fwrite(fileRef, "%c", c);
-                    getChars[i] = truncate(pack(c));
-                    keep[i] = 1'b1;
+                    $fwrite(fileRefReg, "%c", c);
+                    getChars[idx] = truncate(pack(c));
+                    keep[idx] = 1'b1;
                 end
             end
-            $fclose(fileIn);
-            $fclose(fileRef);
-            rdDoneFlag <= True; 
+            $fclose(fileInReg);
+            $fclose(fileRefReg);
+            rdDoneFlagReg <= True; 
             last = True;
             $display("INFO: test file read done");
         end else begin
-            rdBatchCnt <= rdBatchCnt + 1;
-            for(Integer i = 0; i < rdBatchBytesLen; i = i + 1) begin
-                int c <- $fgetc(fileIn);
-                if(c == -1) begin
-                    $fclose(fileRef);
-                    $fclose(fileIn);
+            rdBatchCntReg <= rdBatchCntReg + 1;
+            for(Integer idx = 0; idx < rdBatchBytesLen; idx = idx + 1) begin
+                int rdChar <- $fgetc(fileInReg);
+                if(rdChar == -1) begin
+                    $fclose(fileRefReg);
+                    $fclose(fileInReg);
                     last = True;
                 end else begin
-                    $fwrite(fileRef, "%c", c);
-                    getChars[i] = truncate(pack(c));
-                    keep[i] = 1'b1;
+                    $fwrite(fileRefReg, "%c", rdChar);
+                    getChars[idx] = truncate(pack(rdChar));
+                    keep[idx] = 1'b1;
                 end
             end
         end
@@ -92,7 +92,7 @@ module mkTbAxisRdWrLoop (Empty);
         toDutFifo.enq(axis);
     endrule
 
-    rule reader2dut if(rdBatchCnt > 0);
+    rule reader2dut if(rdBatchCntReg > 0);
         if(dut.axisSlave.tReady) begin
             // $display("INFO: simulation exec a batch");
             toDutFifo.deq();
@@ -113,13 +113,13 @@ module mkTbAxisRdWrLoop (Empty);
             let data = dut.axisMaster.tData;
             Vector#(BATCH_BYTES, Bit#(8)) getChars = unpack(data);
             let keep = dut.axisMaster.tKeep;
-            for(Integer i = 0; i < rdBatchBytesLen; i = i + 1) begin
-                if(keep[i] == 1'b1) begin $fwrite(fileOut, "%c", getChars[i]); end
+            for(Integer idx = 0; idx < rdBatchBytesLen; idx = idx + 1) begin
+                if(keep[idx] == 1'b1) begin $fwrite(fileOutReg, "%c", getChars[i]); end
             end
         end 
-        if(tValidCnt == rdBatchCnt && rdDoneFlag) begin
+        if(tValidCnt == rdBatchCntReg && rdDoneFlagReg) begin
             $display("INFO: file write done, compare the ref and out")
-            $fclose(fileOut);
+            $fclose(fileOutReg);
             $finish();
         end
     endrule
