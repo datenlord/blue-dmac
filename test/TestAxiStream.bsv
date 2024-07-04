@@ -4,7 +4,8 @@ import AxiStreamTypes::*;
 import Counter::*;
 
 typedef 512 DATA_WIDTH;
-typedef TDiv#(DATA_WIDTH, 8) BATCH_BYTES;
+typedef 8 BYTE_BITS;
+typedef TDiv#(DATA_WIDTH, BYTE_BITS) BATCH_BYTES;
 typedef 128 USR_WIDTH;
 typedef 4321 RD_BYTES_LENGTH;
 
@@ -48,18 +49,18 @@ module mkTbAxisRdWrLoop (Empty);
     endrule
 
     rule readfile(initFlagReg && !rdDoneFlagReg && rdBatchCntReg < fromInteger(rdBatchesNum));
-        Vector#(BATCH_BYTES, Bit#(8)) getChars = replicate(0);
+        Vector#(BATCH_BYTES, Bit#(BYTE_BITS)) getChars = replicate(0);
         Bit#(BATCH_BYTES) keep = 0;
         Bool last = False;
         if(rdBatchCntReg == fromInteger(rdBatchesNum) - 1) begin  
             for(Integer idx = 0; idx < rdLastBatchBytesLen; idx = idx + 1) begin
-                int c <- $fgetc(fileInReg);
-                if(c == -1) begin
+                int readChar <- $fgetc(fileInReg);
+                if(readChar == -1) begin
                     $fclose(fileInReg);
                     $fclose(fileRefReg);
                 end else begin
-                    $fwrite(fileRefReg, "%c", c);
-                    getChars[idx] = truncate(pack(c));
+                    $fwrite(fileRefReg, "%c", readChar);
+                    getChars[idx] = truncate(pack(readChar));
                     keep[idx] = 1'b1;
                 end
             end
@@ -92,10 +93,10 @@ module mkTbAxisRdWrLoop (Empty);
         toDutFifo.enq(axis);
     endrule
 
-    rule reader2dut if(rdBatchCntReg > 0);
+    rule reader2dut if (rdBatchCntReg > 0);
         if(dut.axisSlave.tReady) begin
             // $display("INFO: simulation exec a batch");
-            toDutFifo.deq();
+            toDutFifo.deq;
             let axis = toDutFifo.first;
             dut.axisSlave.tValid(
                 True,
@@ -111,7 +112,7 @@ module mkTbAxisRdWrLoop (Empty);
         if(dut.axisMaster.tValid) begin
             tValidCnt <= tValidCnt + 1;
             let data = dut.axisMaster.tData;
-            Vector#(BATCH_BYTES, Bit#(8)) getChars = unpack(data);
+            Vector#(BATCH_BYTES, Bit#(BYTE_BITS)) getChars = unpack(data);
             let keep = dut.axisMaster.tKeep;
             for(Integer idx = 0; idx < rdBatchBytesLen; idx = idx + 1) begin
                 if(keep[idx] == 1'b1) begin $fwrite(fileOutReg, "%c", getChars[i]); end
