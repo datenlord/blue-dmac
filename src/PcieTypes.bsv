@@ -1,7 +1,10 @@
 import AxiStreamTypes :: *;
 
-typedef 8 BYTE_BITS
-typedef TMul#(4, BYTE_BITS) DWORD_BITS;
+typedef 8 BYTE_WIDTH
+typedef TMul#(4, BYTE_WIDTH) DWORD_WIDTH;
+
+typedef 512 PCIE_TLP_BYTES
+typedef #TLog(PCIE_TLP_BYTES) PCIE_TLP_BYTES_WIDTH
 
 typedef 512 PCIE_TDATA_WIDTH;
 typedef 64  PCIE_TDATA_BYTES;
@@ -112,7 +115,7 @@ typedef struct {
     PcieTlpCtlSeqNum                seqNum1;
     PcieTlpCtlParity                parity;
 } PcieRequsterRequestSideBandFrame deriving(Bits, Bounded, Eq);
-// 161 tUser of PcieRequesterComplete AXIS-slave
+// 161bit tUser of PcieRequesterComplete AXIS-slave
 typedef struct {
     PcieTlpCtlByteEn                dataByteEn;  
     PcieTlpCtlIsSopReqCpl           isSop;
@@ -129,7 +132,7 @@ typedef Bit#(PCIE_CR_NP_REQ_COUNT_WIDTH)    PcieNonPostedRequstCount;
 // Interface to PCIe IP Completer Interface
 (*always_ready, always_enabled*)
 interface RawPcieCompleter;
-    // TODO: the AxiStream in blue-wrapper has tDataWidth = tKeepWidth * BYTE_BITS, but the PCIe IP has tDataWidth = tKeepWidth * DWORD_BITS
+    // TODO: the AxiStream in blue-wrapper has tDataWidth = tKeepWidth * BYTE_WIDTH, but the PCIe IP has tDataWidth = tKeepWidth * DWORD_WIDTH
     (* prefix = "s_axis_cq_" *) interface RawAxiStreamSlave#(PCIE_TKEEP_WIDTH, PCIE_COMPLETER_REQUEST_TUSER_WIDTH) Request;
     // (* result = "pcie_cq_np_req" *) method PcieNonPostedRequst nonPostedReqCreditIncrement;
     // (* prefix = "" *) method Action nonPostedReqCreditCnt(
