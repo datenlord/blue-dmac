@@ -20,7 +20,7 @@ typedef struct {
 typedef struct {
     DmaMemAddr startAddr;
     DmaMemAddr length;
-} DmaCtrlFrame deriving(Bits, Bounded, Eq, FShow);
+} DmaRequestFrame deriving(Bits, Bounded, Eq, FShow);
 
 typedef struct {
     DMACsrAddr address;
@@ -30,13 +30,13 @@ typedef struct {
 interface DmaController#(numeric type dataWidth);
 
     interface  FifoIn#(DataFrame#(dataWidth))                         DmaDataC2HPipeIn;
-    interface  FifoIn#(DmaCtrlFrame)                                     DmaCtrlC2HPipeIn;
-    interface  FifoIn#(DmaCtrlFrame)                                     DmaCtrlH2CPipeIn;
+    interface  FifoIn#(DmaRequestFrame)                                DmaCtrlC2HPipeIn;
+    interface  FifoIn#(DmaRequestFrame)                                DmaCtrlH2CPipeIn;
     interface  FifoOut#(DataFrame#(dataWidth))                        DmaDataH2CPipeOut;
 
-    interface  FifoIn#(DmaCsrFrame)                                      DmaCsrC2HPipeIn;
-    interface  FifoOut#(DMACsrAddr)                                     DmaCsrC2HPipeOut;
-    interface  FifoOut#(DmaCsrFrame)                                     DmaCsrH2CPipeOut;
+    interface  FifoIn#(DmaCsrFrame)                                   DmaCsrC2HPipeIn;
+    interface  FifoOut#(DMACsrAddr)                                   DmaCsrC2HPipeOut;
+    interface  FifoOut#(DmaCsrFrame)                                  DmaCsrH2CPipeOut;
 
     interface  RawPcieRequester                                       PcieRequester;
     interface  RawPcieCompleter                                       PcieCompleter;
