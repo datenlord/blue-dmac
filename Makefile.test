@@ -1,0 +1,18 @@
+TESTDIR ?= $(abspath ../test)
+LOGDIR ?= $(abspath ../tmp)
+
+TESTBENCHS = \
+            TestDmaCore.bsv
+
+TestDmaCore.bsv                  = mkChunkComputerTb 
+
+all: $(TESTBENCHS)
+
+%.bsv:
+	$(foreach testcase, $($@), $(shell cd $(TESTDIR) && make simulate TESTFILE=$@ TOPMODULE=$(testcase) > $(LOGDIR)/$@-$(testcase).log 2>&1))
+
+clean:
+	rm -f $(LOGDIR)/*.log
+
+.PHONY: all TESTBENCHS %.bsv clean
+.DEFAULT_GOAL := all
