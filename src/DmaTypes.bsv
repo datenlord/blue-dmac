@@ -12,7 +12,7 @@ typedef Bit#(DMA_CSR_DATA_WIDTH) DMACsrValue;
 
 typedef struct {
     Bit#(dataWidth) data;
-    Bit#(TDiv#(dataWidth, BYTE_BITS)) byteEn;
+    Bit#(TDiv#(dataWidth, BYTE_WIDTH)) byteEn;
     Bool isFirst;
     Bool isLast;
 } DataFrame#(numeric type dataWidth) deriving(Bits, Bounded, Eq, FShow);
@@ -29,17 +29,17 @@ typedef struct {
 
 interface DmaController#(numeric type dataWidth);
 
-    interface  FifoIn#(DataFrame#(dataWidth))                         DmaDataC2HPipeIn;
-    interface  FifoIn#(DmaRequestFrame)                                DmaCtrlC2HPipeIn;
-    interface  FifoIn#(DmaRequestFrame)                                DmaCtrlH2CPipeIn;
-    interface  FifoOut#(DataFrame#(dataWidth))                        DmaDataH2CPipeOut;
+    interface  FifoIn#(DataFrame#(dataWidth))                         dataC2HPipeIn;
+    interface  FifoIn#(DmaRequestFrame)                               reqC2HPipeIn;
+    interface  FifoIn#(DmaRequestFrame)                               reqH2CPipeIn;
+    interface  FifoOut#(DataFrame#(dataWidth))                        dataH2CPipeOut;
 
-    interface  FifoIn#(DmaCsrFrame)                                   DmaCsrC2HPipeIn;
-    interface  FifoOut#(DMACsrAddr)                                   DmaCsrC2HPipeOut;
-    interface  FifoOut#(DmaCsrFrame)                                  DmaCsrH2CPipeOut;
+    interface  FifoIn#(DmaCsrFrame)                                   csrC2HPipeIn;
+    interface  FifoOut#(DMACsrAddr)                                   csrC2HPipeOut;    // read reg in the card from Host
+    interface  FifoOut#(DmaCsrFrame)                                  csrH2CPipeOut;
 
-    interface  RawPcieRequester                                       PcieRequester;
-    interface  RawPcieCompleter                                       PcieCompleter;
-    interface  RawPcieConfiguration                                   PcieConfig;
+    interface  RawPcieRequester                                       pcieRequester;
+    interface  RawPcieCompleter                                       pcieCompleter;
+    interface  RawPcieConfiguration                                   pcieConfig;
 
 endinterface
