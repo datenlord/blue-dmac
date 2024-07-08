@@ -1,27 +1,38 @@
 import FIFOF::*;
+import GetPut :: *;
 import SemiFifo::*;
 import PcieTypes::*;
 import DmaTypes::*;
 
 
-typedef 4096 BUS_BOUNDARY;
-typedef 12   BUS_BOUNDARY_WIDTH;
+typedef 4096                                BUS_BOUNDARY;
+typedef TLog#(BUS_BOUNDARY)                 BUS_BOUNDARY_WIDTH;
+typedef Bit#(BUS_BOUNDARY_WIDTH)            PcieTlpMaxMaxSize;
+typedef Bit#(TLog#(BUS_BOUNDARY_WIDTH))     PcieTlpSizeWidth;
+typedef 128                                 DEFAULT_TLP_SIZE;
+typedef TLog#(DEFAULT_TLP_SIZE)             DEFAULT_TLP_SIZE_WIDTH;
+typedef 3                                   PCIE_TLP_SIZE_SETTING_WIDTH;
+typedef Bit#(PCIE_TLP_SIZE_SETTING_WIDTH)   PcieTlpSizeSetting;      
+typedef enum {DMA_RX, DMA_TX}               TRXDirection deriving(Bits, Eq);
+                
 
 typedef struct {
     DmaRequestFrame dmaRequest;
-    Maybe#(DmaMemAddr) firstChunkLen;
+    Maybe#(DmaMemAddr) firstChunkLenMaybe;
 } ChunkRequestFrame deriving(Bits, Eq);                     
 
 interface ChunkCompute;
-    interface FifoIn#(DmaRequestFrame) dmaRequests;
+    interface FifoIn#(DmaRequestFrame)  dmaRequests;
     interface FifoOut#(DmaRequestFrame) chunkRequests;
+    interface Put#(PcieTlpSizeSetting)  setTlpMaxSize;
 endinterface 
 
-module mkChunkComputer(ChunkCompute ifc);
+module mkChunkComputer (TRXDirection direction, ChunkCompute ifc);
     FIFOF#(DmaRequestFrame) inputFifo <- mkFIFOF;
     FIFOF#(DmaRequestFrame) outputFifo <- mkFIFOF;
     FIFOF#(ChunkRequestFrame) splitFifo <- mkFIFOF;
-
+    Reg#(DmaMemAddr) tlpMaxSize <- mkReg(fromInteger(valueOf(DEFAULT_TLP_SIZE)));                   //MPS if isTX, MRRS else
+    Reg#(PcieTlpSizeWidth) tlpMaxSizeWidth <- mkReg(fromInteger(valueOf(DEFAULT_TLP_SIZE_WIDTH)));   
     Reg#(DmaMemAddr) newChunkPtrReg <- mkReg(0);
     Reg#(DmaMemAddr) totalLenRemainReg <- mkReg(0);
     Reg#(Bool) isSplittingReg <- mkReg(False);
@@ -35,7 +46,7 @@ module mkChunkComputer(ChunkCompute ifc);
     function DmaMemAddr getOffset(DmaRequestFrame request);
         // 4096 - startAddr % 4096
         Bit#(BUS_BOUNDARY_WIDTH) remainder = truncate(request.startAddr);
-        Bit#(BUS_BOUNDARY_WIDTH) offset = fromInteger(valueOf(BUS_BOUNDARY)-1) - zeroExtend(remainder) + 1;
+        Bit#(BUS_BOUNDARY_WIDTH) offset = fromInteger(valueOf(BUS_BOUNDARY) - 1) - zeroExtend(remainder) + 1;
         return zeroExtend(offset);
     endfunction
 
@@ -44,18 +55,17 @@ module mkChunkComputer(ChunkCompute ifc);
         inputFifo.deq;
         let offset = getOffset(request);
         // firstChunkLen = offset % PCIE_TLP_BYTES
-        Bit#(PCIE_TLP_BYTES_WIDTH) offsetModTlpBytes = truncate(offset);
-        DmaMemAddr firstLen = zeroExtend(offsetModTlpBytes);
+        DmaMemAddr firstLen = zeroExtend(PcieTlpMaxMaxSize'(offset[tlpMaxSizeWidth-1:0]));
         splitFifo.enq(ChunkRequestFrame {
             dmaRequest: request,
-            firstChunkLen: hasBoundary(request) ? tagged Valid firstLen : tagged Invalid
+            firstChunkLenMaybe: hasBoundary(request) ? tagged Valid firstLen : tagged Invalid
         });
 endrule
 
     rule execChunkSplit;
         let splitRequest = splitFifo.first;
         if (isSplittingReg) begin   // !isFirst
-            if (totalLenRemainReg <= fromInteger(valueOf(PCIE_TLP_BYTES))) begin 
+            if (totalLenRemainReg <= tlpMaxSize) begin 
                 isSplittingReg <= False; 
                 outputFifo.enq(DmaRequestFrame {
                     startAddr: newChunkPtrReg,
@@ -63,41 +73,59 @@ endrule
                 });
                 splitFifo.deq;
                 totalLenRemainReg <= 0;
-            end else begin
+            end 
+            else begin
                 isSplittingReg <= True;
                 outputFifo.enq(DmaRequestFrame {
                     startAddr: newChunkPtrReg,
-                    length: fromInteger(valueOf(PCIE_TLP_BYTES))
+                    length: tlpMaxSize
                 });
-                newChunkPtrReg <= newChunkPtrReg + fromInteger(valueOf(PCIE_TLP_BYTES));
-                totalLenRemainReg <= totalLenRemainReg - fromInteger(valueOf(PCIE_TLP_BYTES));
+                newChunkPtrReg <= newChunkPtrReg + tlpMaxSize;
+                totalLenRemainReg <= totalLenRemainReg - tlpMaxSize;
             end
-        end else begin   // isFirst
-            let remainderLength = splitRequest.dmaRequest.length - fromMaybe(0, splitRequest.firstChunkLen);
-            if (isValid(splitRequest.firstChunkLen)) begin
+        end 
+        else begin   // isFirst
+            let remainderLength = splitRequest.dmaRequest.length - fromMaybe(0, splitRequest.firstChunkLenMaybe);
+            if (isValid(splitRequest.firstChunkLenMaybe)) begin
                 Bool isSplittingNextCycle = (remainderLength > 0);
                 isSplittingReg <= isSplittingNextCycle;
                 outputFifo.enq(DmaRequestFrame {
                     startAddr: splitRequest.dmaRequest.startAddr,
-                    length: fromMaybe(0, splitRequest.firstChunkLen)
+                    length: fromMaybe(0, splitRequest.firstChunkLenMaybe)
                 });
-                if (!isSplittingNextCycle) begin splitFifo.deq; end
-                newChunkPtrReg <= splitRequest.dmaRequest.startAddr + fromMaybe(0, splitRequest.firstChunkLen);
+                if (!isSplittingNextCycle) begin 
+                    splitFifo.deq; 
+                end
+                newChunkPtrReg <= splitRequest.dmaRequest.startAddr + fromMaybe(0, splitRequest.firstChunkLenMaybe);
                 totalLenRemainReg <= remainderLength;
-            end else begin
-                Bool isSplittingNextCycle = (remainderLength > fromInteger(valueOf(PCIE_TLP_BYTES)));
+            end 
+            else begin
+                Bool isSplittingNextCycle = (remainderLength > tlpMaxSize);
                 isSplittingReg <= isSplittingNextCycle;
                 outputFifo.enq(DmaRequestFrame {
                     startAddr: splitRequest.dmaRequest.startAddr,
-                    length: fromInteger(valueOf(PCIE_TLP_BYTES))
+                    length: tlpMaxSize
                 });
-                if (!isSplittingNextCycle) begin  splitFifo.deq; end
-                newChunkPtrReg <= splitRequest.dmaRequest.startAddr + fromInteger(valueOf(PCIE_TLP_BYTES));
-                totalLenRemainReg <= remainderLength - fromInteger(valueOf(PCIE_TLP_BYTES));
+                if (!isSplittingNextCycle) begin  
+                    splitFifo.deq; 
+                end
+                newChunkPtrReg <= splitRequest.dmaRequest.startAddr + tlpMaxSize;
+                totalLenRemainReg <= remainderLength - tlpMaxSize;
             end
         end
     endrule
 
     interface  dmaRequests = convertFifoToFifoIn(inputFifo);
     interface  chunkRequests = convertFifoToFifoOut(outputFifo);
+
+    interface Put setTlpMaxSize;
+        method Action put (PcieTlpSizeSetting tlpSizeSetting);
+            let setting = tlpSizeSetting;
+            setting[valueOf(PCIE_TLP_SIZE_SETTING_WIDTH)-1] = (direction == DMA_TX) ? 0 : setting[valueOf(PCIE_TLP_SIZE_SETTING_WIDTH)-1];
+            DmaMemAddr defaultTlpMaxSize = fromInteger(valueOf(DEFAULT_TLP_SIZE));
+            tlpMaxSize <= DmaMemAddr'(defaultTlpMaxSize << setting);
+            PcieTlpSizeWidth defaultTlpMaxSizeWidth = fromInteger(valueOf(DEFAULT_TLP_SIZE_WIDTH));
+            tlpMaxSizeWidth <= PcieTlpSizeWidth'(defaultTlpMaxSizeWidth << setting);
+        endmethod
+    endinterface
 endmodule

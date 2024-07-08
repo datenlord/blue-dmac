@@ -156,19 +156,6 @@ typedef Bit#(PCIE_CFG_MGMT_BE_WIDTH)            PcieCfgMgmtByteEn;
 typedef Bit#(PCIE_CFG_MGMT_FUNC_NUM_WIDTH)      PcieCfgMgmtFuncNum;
 typedef Bit#(PCIE_CFG_MGMT_DATA_WIDTH)          PCieCfgMgmtData;
 
-interface RawPcieConfiguration;
-    (* prefix = "cfg_mgmt_" *)           interface RawPcieCfgMgmt           mgmt;
-    (* prefix = "cfg_pm_" *)             interface RawPcieCfgPm             pm;
-    (* prefix = "cfg_msi_" *)            interface RawPcieCfgMsi            msi;
-    (* prefix = "cfg_interrupt_" *)      interface RawPcieCfgInterrupt      interrupt;
-    (* prefix = "cfg_" *)                interface RawPcieCfgControl        control;
-    (* prefix = "cfg_fc_" *)             interface RawPcieCfgFC             flowControl;
-    (* prefix = "cfg_msg_transmit_" *)   interface RawPcieCfgMsgTx          msgTx;
-    (* prefix = "cfg_msg_received_" *)   interface RawPcieCfgMsgRx          msgRx;
-    (* prefix = "" *)                    interface RawPcieCfgStatus         status;
-    (* prefix = "pcie_tfc_" *)           interface RawPcieCfgTransmitFC     txFlowControl;
-endinterface
-
 (*always_ready, always_enabled*)
 interface RawPcieCfgMgmt;
     (* result = "addr" *)                method PcieCfgMgmtAddr      addr;
@@ -219,12 +206,46 @@ interface RawPcieCfgMsgRx;
     
 endinterface
 
+typedef 1 PCIE_CFG_PHY_LINK_DOWN_WIDTH;
+typedef 2 PCIE_CFG_PHY_LINK_STATUS_WIDTH;
+typedef Bit#(PCIE_CFG_PHY_LINK_DOWN_WIDTH)          PcieCfgPhyLinkDown;
+typedef Bit#(PCIE_CFG_PHY_LINK_STATUS_WIDTH)        PcieCfgPhyLinkStatus;
+typedef 3 PCIE_CFG_NEGOTIATED_WIDTH_WIDTH;
+typedef 3 PCIE_CFG_CURRENT_SPEED_WIDTH;
+typedef 2 PCIE_CFG_MAX_PAYLOAD_WIDTH;
+typedef 3 PCIE_CFG_MAX_READ_REQ_WIDTH;
+typedef Bit#(PCIE_CFG_NEGOTIATED_WIDTH_WIDTH)       PcieCfgNegotiatedWidth;
+typedef Bit#(PCIE_CFG_CURRENT_SPEED_WIDTH)          PCieCfgCurrentSpeed;
+typedef Bit#(PCIE_CFG_MAX_PAYLOAD_WIDTH)            PcieCfgMaxPayloadSize;
+typedef Bit#(PCIE_CFG_MAX_READ_REQ_WIDTH)           PCieCfgMaxReadReqSize;  
+typedef 16 PCIE_FUNCTIONS_STATUS_WIDTH;
+typedef Bit#(PCIE_FUNCTIONS_STATUS_WIDTH)           PcieCfgFunctionStatus;
+
 (*always_ready, always_enabled*)
 interface RawPcieCfgStatus;
-    
+    (* result = "phy_link_down" *)      method PcieCfgPhyLinkDown       phyLinkDown;
+    (* result = "phy_link_status" *)    method PcieCfgPhyLinkStatus     phyLinkStatus;
+    (* result = "negotiated_width" *)   method PcieCfgNegotiatedWidth   negotiatedWidth;
+    (* result = "current_speed" *)      method PCieCfgCurrentSpeed      currentSpeed;
+    (* result = "max_payload" *)        method PcieCfgMaxPayloadSize    maxPayloadSize;
+    (* result = "max_read_req" *)       method PCieCfgMaxReadReqSize    maxReadReqSize;
+    (* result = "function_status" *)    method PcieCfgFunctionStatus    functionStatus;
 endinterface
 
 (*always_ready, always_enabled*)
 interface RawPcieCfgTransmitFC;
     
+endinterface
+
+interface RawPcieConfiguration;
+    (* prefix = "cfg_mgmt_" *)           interface RawPcieCfgMgmt           mgmt;
+    (* prefix = "cfg_pm_" *)             interface RawPcieCfgPm             pm;
+    (* prefix = "cfg_msi_" *)            interface RawPcieCfgMsi            msi;
+    (* prefix = "cfg_interrupt_" *)      interface RawPcieCfgInterrupt      interrupt;
+    (* prefix = "cfg_" *)                interface RawPcieCfgControl        control;
+    (* prefix = "cfg_fc_" *)             interface RawPcieCfgFC             flowControl;
+    (* prefix = "cfg_msg_transmit_" *)   interface RawPcieCfgMsgTx          msgTx;
+    (* prefix = "cfg_msg_received_" *)   interface RawPcieCfgMsgRx          msgRx;
+    (* prefix = "" *)                    interface RawPcieCfgStatus         status;
+    (* prefix = "pcie_tfc_" *)           interface RawPcieCfgTransmitFC     txFlowControl;
 endinterface
