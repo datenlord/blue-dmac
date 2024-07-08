@@ -1,4 +1,5 @@
 import SemiFifo::*;
+import GetPut::*;
 import Randomizable::*;
 import DmaTypes::*;
 import DmaRequestCore::*;
@@ -6,11 +7,12 @@ import DmaRequestCore::*;
 typedef 50 TEST_NUM;
 typedef 64'hFFFFFFFFFFFFFFFF MAX_ADDRESS;
 typedef 32'hFFFFFFFF MAX_TEST_LENGTH;
+typedef 2'b10 TLP_SIZE_512_SETTING;
 
 (* doc = "testcase" *) 
 module mkChunkComputerTb (Empty);
 
-    ChunkCompute dut <- mkChunkComputer;
+    ChunkCompute dut <- mkChunkComputer(DMA_TX);
 
     Reg#(Bool) isInitReg <- mkReg(False);
     Reg#(UInt#(32)) testCntReg <- mkReg(0); 
@@ -35,6 +37,7 @@ module mkChunkComputerTb (Empty);
         startAddrRandomVal.cntrl.init;
         lengthRandomVal.cntrl.init;
         isInitReg <= True;
+        dut.setTlpMaxSize.put(fromInteger(valueOf(TLP_SIZE_512_SETTING)));
         $display("Start Test of mkChunkComputerTb");
     endrule
 
