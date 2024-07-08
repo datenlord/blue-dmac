@@ -6,11 +6,11 @@ import DmaTypes::*;
 
 
 typedef 4096                                BUS_BOUNDARY;
-typedef TLog#(BUS_BOUNDARY)                 BUS_BOUNDARY_WIDTH;
+typedef TLog#(TAdd#(1, BUS_BOUNDARY))       BUS_BOUNDARY_WIDTH;
 typedef Bit#(BUS_BOUNDARY_WIDTH)            PcieTlpMaxMaxSize;
 typedef Bit#(TLog#(BUS_BOUNDARY_WIDTH))     PcieTlpSizeWidth;
 typedef 128                                 DEFAULT_TLP_SIZE;
-typedef TLog#(DEFAULT_TLP_SIZE)             DEFAULT_TLP_SIZE_WIDTH;
+typedef TLog#(TAdd#(1, DEFAULT_TLP_SIZE))   DEFAULT_TLP_SIZE_WIDTH;
 typedef 3                                   PCIE_TLP_SIZE_SETTING_WIDTH;
 typedef Bit#(PCIE_TLP_SIZE_SETTING_WIDTH)   PcieTlpSizeSetting;      
 typedef enum {DMA_RX, DMA_TX}               TRXDirection deriving(Bits, Eq);
@@ -60,7 +60,7 @@ module mkChunkComputer (TRXDirection direction, ChunkCompute ifc);
             dmaRequest: request,
             firstChunkLenMaybe: hasBoundary(request) ? tagged Valid firstLen : tagged Invalid
         });
-endrule
+    endrule
 
     rule execChunkSplit;
         let splitRequest = splitFifo.first;
@@ -125,7 +125,7 @@ endrule
             DmaMemAddr defaultTlpMaxSize = fromInteger(valueOf(DEFAULT_TLP_SIZE));
             tlpMaxSize <= DmaMemAddr'(defaultTlpMaxSize << setting);
             PcieTlpSizeWidth defaultTlpMaxSizeWidth = fromInteger(valueOf(DEFAULT_TLP_SIZE_WIDTH));
-            tlpMaxSizeWidth <= PcieTlpSizeWidth'(defaultTlpMaxSizeWidth << setting);
+            tlpMaxSizeWidth <= PcieTlpSizeWidth'(defaultTlpMaxSizeWidth + zeroExtend(setting));
         endmethod
     endinterface
 endmodule

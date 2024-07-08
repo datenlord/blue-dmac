@@ -53,7 +53,8 @@ module mkChunkComputerTb (Empty);
             lenRemainReg <= testLength;
             dut.dmaRequests.enq(request);
             showRequest(request);
-        end else begin
+        end 
+        else begin
             lenRemainReg <= 0;
         end 
     endrule
@@ -65,7 +66,8 @@ module mkChunkComputerTb (Empty);
             $display("Error, has 4KB boundary!");
             showRequest(newRequest);
             $finish();
-        end else begin
+        end 
+        else begin
             // showRequest(newRequest);
             let newRemain = lenRemainReg -  newRequest.length;
             lenRemainReg <= newRemain;
