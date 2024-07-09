@@ -4,10 +4,12 @@ import Randomizable::*;
 import DmaTypes::*;
 import DmaRequestCore::*;
 
-typedef 50 TEST_NUM;
+typedef 1000 CHUNK_PER_EPOCH_TEST_NUM;
 typedef 64'hFFFFFFFFFFFFFFFF MAX_ADDRESS;
 typedef 32'hFFFFFFFF MAX_TEST_LENGTH;
-typedef 2'b10 TLP_SIZE_512_SETTING;
+typedef 2'b00 DEFAULT_TLP_SIZE_SETTING;
+typedef 4   CHUNK_TX_TEST_SETTING_NUM;
+typedef 6   CHUNK_RX_TEST_SETTING_NUM;
 
 (* doc = "testcase" *) 
 module mkChunkComputerTb (Empty);
@@ -16,6 +18,7 @@ module mkChunkComputerTb (Empty);
 
     Reg#(Bool) isInitReg <- mkReg(False);
     Reg#(UInt#(32)) testCntReg <- mkReg(0); 
+    Reg#(UInt#(32)) epochCntReg <- mkReg(0); 
     Reg#(DmaMemAddr) lenRemainReg <- mkReg(0);
     Reg#(DmaRequestFrame) testRequest <- mkRegU;
     Randomize#(DmaMemAddr) startAddrRandomVal <- mkConstrainedRandomizer(0, fromInteger(valueOf(MAX_ADDRESS)-1));
@@ -37,8 +40,9 @@ module mkChunkComputerTb (Empty);
         startAddrRandomVal.cntrl.init;
         lengthRandomVal.cntrl.init;
         isInitReg <= True;
-        dut.setTlpMaxSize.put(fromInteger(valueOf(TLP_SIZE_512_SETTING)));
+        dut.setTlpMaxSize.put(fromInteger(valueOf(DEFAULT_TLP_SIZE_SETTING)));
         $display("Start Test of mkChunkComputerTb");
+        $display("INFO: Set Max Payload Size to ", valueOf(DEFAULT_TLP_SIZE));
     endrule
 
     rule testInput if (isInitReg && lenRemainReg == 0);
@@ -68,16 +72,27 @@ module mkChunkComputerTb (Empty);
             $finish();
         end 
         else begin
-            // showRequest(newRequest);
             let newRemain = lenRemainReg -  newRequest.length;
             lenRemainReg <= newRemain;
-            if(newRemain == 0) begin
-                testCntReg <= testCntReg + 1;
+            if (newRemain == 0) begin
+                if (epochCntReg < fromInteger(valueOf(CHUNK_PER_EPOCH_TEST_NUM)-1)) begin
+                    epochCntReg <= epochCntReg + 1;
+                end 
+                else begin
+                    epochCntReg <= 0;
+                    testCntReg <= testCntReg + 1;
+                    if (testCntReg == fromInteger(valueOf(CHUNK_TX_TEST_SETTING_NUM)-1)) begin
+                        $display("INFO: ChunkComputer Test End.");
+                        $finish();
+                    end 
+                    else begin
+                        PcieTlpSizeSetting newSetting = fromInteger(valueOf(DEFAULT_TLP_SIZE_SETTING)) + truncate(pack(testCntReg)) + 1;
+                        dut.setTlpMaxSize.put(newSetting);
+                        $display("INFO: Set Max Payload Size to ", pack(fromInteger(valueOf(DEFAULT_TLP_SIZE)) << newSetting));
+                    end
+                end
             end
         end
     endrule
 
-    rule testFinish ;
-        if (testCntReg == fromInteger(valueOf(TEST_NUM))) $finish();
-    endrule
 endmodule
