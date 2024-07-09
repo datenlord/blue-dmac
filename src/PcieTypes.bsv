@@ -1,7 +1,6 @@
-import AxiStreamTypes :: *;
+import AxiStreamTypes::*;
+import StreamUtils::*;
 
-typedef 8 BYTE_WIDTH;
-typedef TMul#(4, BYTE_WIDTH) DWORD_WIDTH;
 
 typedef 512 PCIE_TLP_BYTES;
 typedef TLog#(PCIE_TLP_BYTES) PCIE_TLP_BYTES_WIDTH;

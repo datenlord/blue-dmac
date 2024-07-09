@@ -6,19 +6,17 @@ import DmaTypes::*;
 
 
 typedef 4096                                BUS_BOUNDARY;
-typedef TLog#(TAdd#(1, BUS_BOUNDARY))       BUS_BOUNDARY_WIDTH;
-typedef Bit#(BUS_BOUNDARY_WIDTH)            PcieTlpMaxMaxSize;
+typedef TAdd#(1, TLog#(BUS_BOUNDARY))       BUS_BOUNDARY_WIDTH;
+typedef Bit#(BUS_BOUNDARY_WIDTH)            PcieTlpMaxMaxPayloadSize;
 typedef Bit#(TLog#(BUS_BOUNDARY_WIDTH))     PcieTlpSizeWidth;
 typedef 128                                 DEFAULT_TLP_SIZE;
-typedef TLog#(TAdd#(1, DEFAULT_TLP_SIZE))   DEFAULT_TLP_SIZE_WIDTH;
+typedef TAdd#(1, TLog#(DEFAULT_TLP_SIZE))   DEFAULT_TLP_SIZE_WIDTH;
 typedef 3                                   PCIE_TLP_SIZE_SETTING_WIDTH;
 typedef Bit#(PCIE_TLP_SIZE_SETTING_WIDTH)   PcieTlpSizeSetting;      
-typedef enum {DMA_RX, DMA_TX}               TRXDirection deriving(Bits, Eq);
-                
 
 typedef struct {
     DmaRequestFrame dmaRequest;
-    Maybe#(DmaMemAddr) firstChunkLenMaybe;
+    DmaMemAddr firstChunkLen;
 } ChunkRequestFrame deriving(Bits, Eq);                     
 
 interface ChunkCompute;
@@ -44,21 +42,19 @@ module mkChunkComputer (TRXDirection direction, ChunkCompute ifc);
     endfunction
 
     function DmaMemAddr getOffset(DmaRequestFrame request);
-        // 4096 - startAddr % 4096
-        Bit#(BUS_BOUNDARY_WIDTH) remainder = truncate(request.startAddr);
-        Bit#(BUS_BOUNDARY_WIDTH) offset = fromInteger(valueOf(BUS_BOUNDARY) - 1) - zeroExtend(remainder) + 1;
-        return zeroExtend(offset);
+        // MPS - startAddr % MPS, MPS means MRRS when the module is set to RX mode
+        DmaMemAddr remainderOfMps = zeroExtend(PcieTlpMaxMaxPayloadSize'(request.startAddr[tlpMaxSizeWidth-1:0]));
+        DmaMemAddr offsetOfMps = tlpMaxSize - remainderOfMps;    
+        return offsetOfMps;
     endfunction
 
     rule getfirstChunkLen;
         let request = inputFifo.first;
         inputFifo.deq;
         let offset = getOffset(request);
-        // firstChunkLen = offset % PCIE_TLP_BYTES
-        DmaMemAddr firstLen = zeroExtend(PcieTlpMaxMaxSize'(offset[tlpMaxSizeWidth-1:0]));
         splitFifo.enq(ChunkRequestFrame {
             dmaRequest: request,
-            firstChunkLenMaybe: hasBoundary(request) ? tagged Valid firstLen : tagged Invalid
+            firstChunkLen: hasBoundary(request) ? offset : tlpMaxSize
         });
     endrule
 
@@ -85,33 +81,18 @@ module mkChunkComputer (TRXDirection direction, ChunkCompute ifc);
             end
         end 
         else begin   // isFirst
-            let remainderLength = splitRequest.dmaRequest.length - fromMaybe(0, splitRequest.firstChunkLenMaybe);
-            if (isValid(splitRequest.firstChunkLenMaybe)) begin
-                Bool isSplittingNextCycle = (remainderLength > 0);
-                isSplittingReg <= isSplittingNextCycle;
-                outputFifo.enq(DmaRequestFrame {
-                    startAddr: splitRequest.dmaRequest.startAddr,
-                    length: fromMaybe(0, splitRequest.firstChunkLenMaybe)
-                });
-                if (!isSplittingNextCycle) begin 
-                    splitFifo.deq; 
-                end
-                newChunkPtrReg <= splitRequest.dmaRequest.startAddr + fromMaybe(0, splitRequest.firstChunkLenMaybe);
-                totalLenRemainReg <= remainderLength;
-            end 
-            else begin
-                Bool isSplittingNextCycle = (remainderLength > tlpMaxSize);
-                isSplittingReg <= isSplittingNextCycle;
-                outputFifo.enq(DmaRequestFrame {
-                    startAddr: splitRequest.dmaRequest.startAddr,
-                    length: tlpMaxSize
-                });
-                if (!isSplittingNextCycle) begin  
-                    splitFifo.deq; 
-                end
-                newChunkPtrReg <= splitRequest.dmaRequest.startAddr + tlpMaxSize;
-                totalLenRemainReg <= remainderLength - tlpMaxSize;
+            let remainderLength = splitRequest.dmaRequest.length - splitRequest.firstChunkLen;
+            Bool isSplittingNextCycle = (remainderLength > 0);
+            isSplittingReg <= isSplittingNextCycle;
+            outputFifo.enq(DmaRequestFrame {
+                startAddr: splitRequest.dmaRequest.startAddr,
+                length: splitRequest.firstChunkLen
+            }); 
+            if (!isSplittingNextCycle) begin 
+                splitFifo.deq; 
             end
+            newChunkPtrReg <= splitRequest.dmaRequest.startAddr + splitRequest.firstChunkLen;
+            totalLenRemainReg <= remainderLength;
         end
     endrule
 
@@ -128,4 +109,5 @@ module mkChunkComputer (TRXDirection direction, ChunkCompute ifc);
             tlpMaxSizeWidth <= PcieTlpSizeWidth'(defaultTlpMaxSizeWidth + zeroExtend(setting));
         endmethod
     endinterface
+    
 endmodule
