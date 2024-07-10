@@ -2,8 +2,10 @@ TESTDIR ?= $(abspath ../test)
 LOGDIR ?= $(abspath ../tmp)
 
 TESTBENCHS = \
+			TestStreamUtils.bsv \
             TestDmaCore.bsv
 
+TestStreamUtils					 = mkStreamConcatTb
 TestDmaCore.bsv                  = mkChunkComputerTb 
 
 all: $(TESTBENCHS)
