@@ -23,8 +23,8 @@ module mkStreamConcatTb(Empty);
 
     StreamConcat dut <- mkStreamConcat;
 
-    Randomize#(StreamSize) streamASizeRandomValue <- mkConstrainedRandomizer(MIN_STREAM_SIZE, MAX_STREAM_SIZE);
-    Randomize#(StreamSize) streamBSizeRandomValue <- mkConstrainedRandomizer(MIN_STREAM_SIZE, MAX_STREAM_SIZE);
+    Randomize#(StreamSize) streamASizeRandomValue <- mkConstrainedRandomizer(fromInteger(valueOf(MIN_STREAM_SIZE)), fromInteger(valueOf(MAX_STREAM_SIZE)));
+    Randomize#(StreamSize) streamBSizeRandomValue <- mkConstrainedRandomizer(fromInteger(valueOf(MIN_STREAM_SIZE)), fromInteger(valueOf(MAX_STREAM_SIZE)));
 
     Reg#(StreamSize) streamASizeReg <- mkReg(0);
     Reg#(StreamSize) streamBSizeReg <- mkReg(0);
@@ -42,9 +42,9 @@ module mkStreamConcatTb(Empty);
     };
 
     function DataStream generatePsuedoStream (StreamSize size, Bool isFirst);
-        if (size < BYTE_EN_WIDTH) begin
+        if (size < fromInteger(valueOf(BYTE_EN_WIDTH))) begin
             return DataStream{
-                data: PSUEDO_DATA,
+                data: fromInteger(valueOf(PSUEDO_DATA)),
                 byteEn: (1 << size) - 1,
                 isFirst: isFirst,
                 isLast: True
@@ -52,8 +52,8 @@ module mkStreamConcatTb(Empty);
         end 
         else begin
             return DataStream{
-                data: PSUEDO_DATA,
-                byteEn: MAX_BYTE_EN,
+                data: fromInteger(valueOf(PSUEDO_DATA)),
+                byteEn: fromInteger(valueOf(MAX_BYTE_EN)),
                 isFirst: isFirst,
                 isLast: False
             };
@@ -62,13 +62,14 @@ module mkStreamConcatTb(Empty);
 
     rule testInit if (!isInitReg);
         $display("INFO: start StreamConcatTb!");
-        streamSizeRandomValue.cntrl.init;
+        streamASizeRandomValue.cntrl.init;
+        streamBSizeRandomValue.cntrl.init;
         isInitReg <= True;
     endrule
 
-    rule testInput if (isInitReg && testCntReg < TEST_NUM);
-        dut.inputStreamFirst.enq(testStreamA);
-        dut.inputStreamSecond.enq(testStreamA);
+    rule testInput if (isInitReg && testCntReg < fromInteger(valueOf(TEST_NUM)));
+        dut.inputStreamFirst.enq(testStream);
+        dut.inputStreamSecond.enq(testStream);
         testCntReg <= testCntReg + 1;
     endrule
 

@@ -101,7 +101,7 @@ module mkStreamConcat (StreamConcat ifc);
             concatStream = DataStream{
                 data: concatData,
                 byteEn: concatByteEn,
-                isFirst: False,
+                isFirst: streamA.isLast,
                 isLast: isConcatStreamLast
             };
             remainStream = DataStream{
