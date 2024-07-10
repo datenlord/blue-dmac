@@ -12,7 +12,7 @@ typedef 4   CHUNK_TX_TEST_SETTING_NUM;
 typedef 6   CHUNK_RX_TEST_SETTING_NUM;
 
 (* doc = "testcase" *) 
-module mkChunkComputerTb (Empty);
+module mkChunkComputerTb(Empty);
 
     ChunkCompute dut <- mkChunkComputer(DMA_TX);
 

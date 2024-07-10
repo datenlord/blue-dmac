@@ -3,7 +3,7 @@ import FIFOF::*;
 import SemiFifo::*;
 
 typedef 8 BYTE_WIDTH;
-typedef TAdd#(1, TLog#(BYTE_WIDTH)) BYTE_WIDTH_WIDTH;
+typedef TLog#(BYTE_WIDTH) BYTE_WIDTH_WIDTH;
 typedef TMul#(4, BYTE_WIDTH) DWORD_WIDTH;
 
 typedef 2 CONCAT_STREAM_NUM;
@@ -64,23 +64,28 @@ module mkStreamConcat (StreamConcat ifc);
         return ptr;
     endfunction
 
-    function Tuple3#(DataStream, DataStream, BytePtr) getConcatStream
-        (DataStream streamA, DataStream streamB, BytePtr bytePtrA, BytePtr bytePtrB);
+    function Tuple3#(DataStream, DataStream, BytePtr) getConcatStream (
+        DataStream streamA, DataStream streamB, BytePtr bytePtrA, BytePtr bytePtrB
+    );
         Bool isCallLegally = (streamA.isLast && bytePtrA < maxBytePtr && bytePtrA > 0);
         BitPtr bitPtrA = zeroExtend(bytePtrA) << fromInteger(valueOf(BYTE_WIDTH_WIDTH));
+
         // Fill the low PtrA bytes by streamA data
         Data concatDataA = streamA.data;
         ByteEn concatByteEnA = streamA.byteEn;
+
         // Fill the high bytes by streamB data
         Data concatDataB = streamB.data << bitPtrA;
-        ByteEn concatByteEnB = streamB.byteEn << bitPtrA;
-        Data concatData = concatDataA & concatDataB;
-        ByteEn concatByteEn = concatByteEnA & concatByteEnB;
+        ByteEn concatByteEnB = streamB.byteEn << bytePtrA;
+        Data concatData = concatDataA | concatDataB;
+        ByteEn concatByteEn = concatByteEnA | concatByteEnB;
+
         // Get the remain bytes of streamB data
         BitPtr resBitPtr = maxBitPtr - bitPtrA;
         BytePtr resBytePtr = maxBytePtr - bytePtrA;
         Data remainData = streamB.data >> resBitPtr;
         ByteEn remainByteEn = streamB.byteEn >> resBytePtr;
+
         // Get if the concat frame is the last
         Bool isConcatStreamLast = streamB.isLast;
         BytePtr remainBytePtr = 0;
@@ -90,6 +95,7 @@ module mkStreamConcat (StreamConcat ifc);
         end
          DataStream concatStream = emptyStream;
          DataStream remainStream = emptyStream;
+
         // package the return concatStream and remainStream
         if(isCallLegally) begin
             concatStream = DataStream{
@@ -129,6 +135,7 @@ module mkStreamConcat (StreamConcat ifc);
         end 
         // the last StreamA + the first StreamB
         else if (!hasRemainReg && streamA.isLast && streamB.isFirst) begin
+            $display(bytePtrRegA);
             match{.concatStream, .remainStream, .remainBytePtr} = getConcatStream(streamA, streamB, bytePtrRegA, bytePtrRegB);
             Bool hasRemain = unpack(remainStream.byteEn[0]);
             hasRemainReg <= hasRemain;
@@ -162,6 +169,5 @@ module mkStreamConcat (StreamConcat ifc);
     interface inputStreamFirst = convertFifoToFifoIn(inputFifoA);
     interface inputStreamSecond = convertFifoToFifoIn(inputFifoB);
     interface outputStream = convertFifoToFifoOut(outputFifo);
-
 
 endmodule
