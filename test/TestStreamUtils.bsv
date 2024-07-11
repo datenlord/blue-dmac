@@ -3,9 +3,6 @@ import SemiFifo::*;
 import Randomizable::*;
 import StreamUtils::*;
 
-typedef UInt#(32) StreamSize;
-typedef 'hFFFFFFFFFFFFFFFF MAX_BYTE_EN;
-
 typedef 'hAB PSEUDO_DATA;
 typedef 8 PSEUDO_DATA_WIDTH;
 
@@ -19,6 +16,11 @@ typedef 'h1 MIN_STREAM_SIZE;
 typedef 'hFFFF MAX_STREAM_SIZE;
 typedef 1000 TEST_NUM;
 
+interface TestStreamConcat;
+    interface FifoOut#(DataStream)  stream4concatFirst;
+    interface FifoOut#(DataStream)  stream4concatSecond;
+    interface FifoIn#(DataStream)   outputStream;
+endinterface
 
 (* doc = "testcase" *) 
 module mkStreamConcatTb(Empty);
@@ -84,12 +86,16 @@ module mkStreamConcatTb(Empty);
 
         else if (testRoundReg > 0) begin
             if (streamARemainSizeReg > 0 && dut.inputStreamFirst.notFull) begin
-                dut.inputStreamFirst.enq(generatePsuedoStream(streamARemainSizeReg, False, (streamARemainSizeReg <= fromInteger(valueOf(BYTE_EN_WIDTH)))));
-                streamARemainSizeReg <= (streamARemainSizeReg > fromInteger(valueOf(BYTE_EN_WIDTH))) ? streamARemainSizeReg - fromInteger(valueOf(BYTE_EN_WIDTH)) : 0;
+                Bool isLast =  streamARemainSizeReg <= fromInteger(valueOf(BYTE_EN_WIDTH));
+                StreamSize size = isLast ? streamARemainSizeReg : fromInteger(valueOf(BYTE_EN_WIDTH));
+                dut.inputStreamFirst.enq(generatePsuedoStream(size, False, isLast));
+                streamARemainSizeReg <= streamARemainSizeReg - size;
             end
             if (streamBRemainSizeReg > 0 && dut.inputStreamSecond.notFull) begin
-                dut.inputStreamSecond.enq(generatePsuedoStream(streamBRemainSizeReg, False, (streamARemainSizeReg <= fromInteger(valueOf(BYTE_EN_WIDTH)))));
-                streamBRemainSizeReg <= (streamBRemainSizeReg > fromInteger(valueOf(BYTE_EN_WIDTH))) ? streamBRemainSizeReg - fromInteger(valueOf(BYTE_EN_WIDTH)) : 0;
+                Bool isLast =  streamBRemainSizeReg <= fromInteger(valueOf(BYTE_EN_WIDTH));
+                StreamSize size = isLast ? streamBRemainSizeReg : fromInteger(valueOf(BYTE_EN_WIDTH));
+                dut.inputStreamSecond.enq(generatePsuedoStream(size, False, isLast));
+                streamBRemainSizeReg <= streamBRemainSizeReg - size;
             end
             testRoundReg <= testRoundReg - 1;
         end
@@ -115,6 +121,11 @@ module mkStreamConcatTb(Empty);
         end
         else begin
             concatSizeReg <= concatSize;
+            if (outStream.data != pseudoData) begin
+                $display("Error: Wrong data in round %d", testRoundReg);
+                showDataStream(outStream);
+                $finish();
+            end
         end
         dut.outputStream.deq;
     endrule
