@@ -1,5 +1,6 @@
 import Vector::*;
 import FIFOF::*;
+import GetPut::*;
 import SemiFifo::*;
 
 typedef 8 BYTE_WIDTH;
@@ -10,11 +11,14 @@ typedef 2 CONCAT_STREAM_NUM;
 
 typedef 512 DATA_WIDTH;
 typedef TDiv#(DATA_WIDTH, BYTE_WIDTH) BYTE_EN_WIDTH;
+typedef 'hFFFFFFFFFFFFFFFF MAX_BYTE_EN;
 
 typedef Bit#(DATA_WIDTH) Data;
 typedef Bit#(BYTE_EN_WIDTH) ByteEn;
 typedef Bit#(TAdd#(1, TLog#(DATA_WIDTH))) BitPtr;
 typedef Bit#(TAdd#(1, TLog#(BYTE_EN_WIDTH))) BytePtr;
+
+typedef UInt#(32) StreamSize;
 
 typedef struct {
     Data data;
@@ -31,6 +35,12 @@ typedef struct {
 interface StreamConcat;
     interface FifoIn#(DataStream)  inputStreamFirst;
     interface FifoIn#(DataStream)  inputStreamSecond;
+    interface FifoOut#(DataStream) outputStream;
+endinterface
+
+interface StreamSplit;
+    interface FifoIn#(DataStream)  inputStream;
+    interface Put#(StreamSize) setSplitPtr;
     interface FifoOut#(DataStream) outputStream;
 endinterface
 
@@ -52,6 +62,21 @@ function Action showDataStream (DataStream stream);
     endaction;
 endfunction
 
+function Action checkDataStream (DataStream stream, String name);
+    if (stream.byteEn == 0 || stream.data == 0) begin 
+        return action
+            $display("Error: wrong dataStream ", name);
+            showDataStream(stream);
+            $finish();
+        endaction;
+    end 
+    else begin
+        return action
+        endaction;
+    end
+endfunction
+
+(* synthesize *)
 module mkStreamConcat (StreamConcat ifc);
 
     FIFOF#(DataStream) inputFifoA <- mkFIFOF;
@@ -112,7 +137,7 @@ module mkStreamConcat (StreamConcat ifc);
             concatStream = DataStream{
                 data: concatData,
                 byteEn: concatByteEn,
-                isFirst: streamA.isLast,
+                isFirst: streamA.isFirst,
                 isLast: isConcatStreamLast
             };
             remainStream = DataStream{
@@ -180,13 +205,6 @@ module mkStreamConcat (StreamConcat ifc);
                 hasRemainReg <= hasRemain;
                 remainStreamReg <= remainStream;
                 remainBytePtrReg <= remainBytePtr;
-                if (concatStream.byteEn == 0) begin
-                    $display("B + remain", remainBytePtrReg, bytePtrB);
-                    $display("StreamB");
-                    showDataStream(streamB);
-                    $display("remain");
-                    showDataStream(remainStreamReg);
-                end
                 outputFifo.enq(concatStream);
                 prepareFifoB.deq;
             end
@@ -205,6 +223,25 @@ module mkStreamConcat (StreamConcat ifc);
 
     interface inputStreamFirst = convertFifoToFifoIn(inputFifoA);
     interface inputStreamSecond = convertFifoToFifoIn(inputFifoB);
+    interface outputStream = convertFifoToFifoOut(outputFifo);
+
+endmodule
+
+(* synthesize *)
+module mkStreamSplit(StreamSplit ifc);
+
+    Reg#(Maybe#(StreamSize)) splitLocationMaybeReg <- mkReg(Invalid);
+
+    FIFOF#(DataStream) inputFifo <- mkFIFOF;
+    FIFOF#(DataStream) outputFifo <- mkFIFOF;
+
+    interface Put setSplitPtr;
+        method Action put(StreamSize splitPtr);
+
+        endmethod
+    endinterface
+
+    interface inputStream = convertFifoToFifoIn(inputFifo);
     interface outputStream = convertFifoToFifoOut(outputFifo);
 
 endmodule

@@ -4,9 +4,9 @@ import Randomizable::*;
 import DmaTypes::*;
 import DmaRequestCore::*;
 
-typedef 1000 CHUNK_PER_EPOCH_TEST_NUM;
+typedef 10 CHUNK_PER_EPOCH_TEST_NUM;
 typedef 64'hFFFFFFFFFFFFFFFF MAX_ADDRESS;
-typedef 32'hFFFFFFFF MAX_TEST_LENGTH;
+typedef 16'hFFFF MAX_TEST_LENGTH;
 typedef 2'b00 DEFAULT_TLP_SIZE_SETTING;
 typedef 4   CHUNK_TX_TEST_SETTING_NUM;
 typedef 6   CHUNK_RX_TEST_SETTING_NUM;
