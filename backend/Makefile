@@ -8,8 +8,8 @@ OUTPUTDIR ?= output
 LOGFILE ?= run.log
 RUNTOPHASE ?= place # synth place route all
 PARTNAME = xcvu13p-fhgb2104-2-i
-TARGETFILE ?= ../src/DmaRequestCore.bsv
-TOPMODULE ?= mkChunkComputer
+TARGETFILE ?= ../src/StreamUtils.bsv
+TOPMODULE ?= mkStreamConcat
 
 export TOP = $(TOPMODULE)
 export RTL = $(VLOGDIR)
