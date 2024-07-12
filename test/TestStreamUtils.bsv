@@ -16,11 +16,30 @@ typedef 'h1 MIN_STREAM_SIZE;
 typedef 'hFFFF MAX_STREAM_SIZE;
 typedef 1000 TEST_NUM;
 
-interface TestStreamConcat;
-    interface FifoOut#(DataStream)  stream4concatFirst;
-    interface FifoOut#(DataStream)  stream4concatSecond;
-    interface FifoIn#(DataStream)   outputStream;
-endinterface
+function Data getPseudoData();
+    Data pseudoData = fromInteger(valueOf(PSEUDO_DATA));
+    for (Integer idx = 0; idx < valueOf(TDiv#(DATA_WIDTH, PSEUDO_DATA_WIDTH)); idx = idx + 1) begin
+        pseudoData = pseudoData | (pseudoData << idx*valueOf(PSEUDO_DATA_WIDTH));
+    end
+    return pseudoData;
+endfunction
+
+
+function DataStream generatePsuedoStream (StreamSize size, Bool isFirst, Bool isLast);
+    let pseudoData = getPseudoData();
+    let offsetPtr = (unpack(zeroExtend(getMaxBytePtr())) - size) << valueOf(BYTE_WIDTH_WIDTH);
+    Data streamData = (pseudoData << offsetPtr) >> offsetPtr;
+    return DataStream{
+        data: streamData,
+        byteEn: (1 << size) - 1,
+        isFirst: isFirst,
+        isLast: isLast
+    };
+endfunction
+
+function StreamSize getMaxFrameSize (); 
+    return fromInteger(valueOf(BYTE_EN_WIDTH));
+endfunction
 
 (* doc = "testcase" *) 
 module mkStreamConcatTb(Empty);
@@ -41,21 +60,7 @@ module mkStreamConcatTb(Empty);
     Reg#(UInt#(32)) testRoundReg <- mkReg(0);
     Reg#(UInt#(32)) testFinishCntReg <- mkReg(0);
 
-    Data pseudoData = fromInteger(valueOf(PSEUDO_DATA));
-    for (Integer idx = 0; idx < valueOf(TDiv#(DATA_WIDTH, PSEUDO_DATA_WIDTH)); idx = idx + 1) begin
-        pseudoData = pseudoData | (pseudoData << idx*valueOf(PSEUDO_DATA_WIDTH));
-    end
 
-    function DataStream generatePsuedoStream (StreamSize size, Bool isFirst, Bool isLast);
-        let offsetPtr = (fromInteger(valueOf(BYTE_EN_WIDTH)) - size) << valueOf(BYTE_WIDTH_WIDTH);
-        Data streamData = (pseudoData << offsetPtr) >> offsetPtr;
-        return DataStream{
-            data: streamData,
-            byteEn: (1 << size) - 1,
-            isFirst: isFirst,
-            isLast: isLast
-        };
-    endfunction
 
     rule testInit if (!isInitReg);
         $display("INFO: ================start StreamConcatTb!==================");
@@ -67,7 +72,7 @@ module mkStreamConcatTb(Empty);
 
     rule testInput if (isInitReg && testCntReg < fromInteger(valueOf(TEST_NUM)));
 
-        if (testRoundReg == 0 && dut.inputStreamFirst.notFull &&  dut.inputStreamSecond.notFull) begin
+        if (testRoundReg == 0 && dut.inputStreamFirstFifoIn.notFull &&  dut.inputStreamSecondFifoIn.notFull) begin
             StreamSize sizeA <- streamASizeRandomValue.next;
             StreamSize sizeB <- streamASizeRandomValue.next;
             ideaConcatSizeFifo.enq(sizeA + sizeB); 
@@ -75,8 +80,8 @@ module mkStreamConcatTb(Empty);
             let isLast = sizeA <= fromInteger(valueOf(BYTE_EN_WIDTH));
             let firstSizeA = isLast ? sizeA : fromInteger(valueOf(BYTE_EN_WIDTH));
             let firstSizeB = isLast ? sizeB : fromInteger(valueOf(BYTE_EN_WIDTH));
-            dut.inputStreamFirst.enq(generatePsuedoStream(firstSizeA, True, isLast));
-            dut.inputStreamSecond.enq(generatePsuedoStream(firstSizeB, True, isLast));
+            dut.inputStreamFirstFifoIn.enq(generatePsuedoStream(firstSizeA, True, isLast));
+            dut.inputStreamSecondFifoIn.enq(generatePsuedoStream(firstSizeB, True, isLast));
             streamARemainSizeReg <= sizeA - firstSizeA;
             streamBRemainSizeReg <= sizeB - firstSizeB;
             testCntReg <= testCntReg + 1;
@@ -85,16 +90,16 @@ module mkStreamConcatTb(Empty);
         end
 
         else if (testRoundReg > 0) begin
-            if (streamARemainSizeReg > 0 && dut.inputStreamFirst.notFull) begin
+            if (streamARemainSizeReg > 0 && dut.inputStreamFirstFifoIn.notFull) begin
                 Bool isLast =  streamARemainSizeReg <= fromInteger(valueOf(BYTE_EN_WIDTH));
                 StreamSize size = isLast ? streamARemainSizeReg : fromInteger(valueOf(BYTE_EN_WIDTH));
-                dut.inputStreamFirst.enq(generatePsuedoStream(size, False, isLast));
+                dut.inputStreamFirstFifoIn.enq(generatePsuedoStream(size, False, isLast));
                 streamARemainSizeReg <= streamARemainSizeReg - size;
             end
-            if (streamBRemainSizeReg > 0 && dut.inputStreamSecond.notFull) begin
+            if (streamBRemainSizeReg > 0 && dut.inputStreamSecondFifoIn.notFull) begin
                 Bool isLast =  streamBRemainSizeReg <= fromInteger(valueOf(BYTE_EN_WIDTH));
                 StreamSize size = isLast ? streamBRemainSizeReg : fromInteger(valueOf(BYTE_EN_WIDTH));
-                dut.inputStreamSecond.enq(generatePsuedoStream(size, False, isLast));
+                dut.inputStreamSecondFifoIn.enq(generatePsuedoStream(size, False, isLast));
                 streamBRemainSizeReg <= streamBRemainSizeReg - size;
             end
             testRoundReg <= testRoundReg - 1;
@@ -103,7 +108,7 @@ module mkStreamConcatTb(Empty);
     endrule
 
     rule testOutput;
-        let outStream = dut.outputStream.first;
+        let outStream = dut.outputStreamFifoOut.first;
         StreamSize concatSize = concatSizeReg + unpack(zeroExtend(convertByteEn2BytePtr(outStream.byteEn)));
         if (outStream.isLast) begin
             let ideaSize = ideaConcatSizeFifo.first;
@@ -121,19 +126,52 @@ module mkStreamConcatTb(Empty);
         end
         else begin
             concatSizeReg <= concatSize;
-            if (outStream.data != pseudoData) begin
+            if (outStream.data != getPseudoData()) begin
                 $display("Error: Wrong data in round %d", testRoundReg);
                 showDataStream(outStream);
                 $finish();
             end
         end
-        dut.outputStream.deq;
+        dut.outputStreamFifoOut.deq;
     endrule
 
     rule testFinish;
         if (testFinishCntReg == fromInteger(valueOf(TEST_NUM)-1)) begin
             $finish();
         end
+    endrule
+
+endmodule
+
+
+module mkStreamSplitTb(Empty);
+
+    StreamSplit dut <- mkStreamSplit;
+    Randomize#(StreamSize) streamSizeRandomValue <- mkConstrainedRandomizer(fromInteger(valueOf(MIN_STREAM_SIZE)), fromInteger(valueOf(MAX_STREAM_SIZE)));
+    Reg#(Bool) isInitReg <- mkReg(False);
+    Reg#(UInt#(32)) testCntReg <- mkReg(0);
+    Reg#(StreamSize) streamSizeReg <- mkReg(0);
+    Reg#(StreamSize) streamSize2PutReg <- mkReg(0);
+    Reg#(UInt#(32)) testRoundReg <- mkReg(0);
+
+    rule testInit if (!isInitReg);
+        isInitReg <= True;
+        streamSizeRandomValue.cntrl.init;
+    endrule
+
+    rule testInput if (isInitReg);
+        if (testRoundReg == 0) begin
+            let size <- streamSizeRandomValue.next;
+            if (size <= getMaxFrameSize()) begin
+                let stream = generatePsuedoStream(size, True, True);
+                dut.inputStreamFifoIn.enq(stream);
+                streamSizeReg <= size;
+            end
+        end
+    endrule
+
+    rule testOutput if (isInitReg);
+
     endrule
 
 endmodule
