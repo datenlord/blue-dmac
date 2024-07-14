@@ -1,6 +1,9 @@
 import FIFOF::*;
 import SemiFifo::*;
 import LFSR::*;
+
+import PrimUtils::*;
+import DmaTypes::*;
 import StreamUtils::*;
 
 typedef 'hAB PSEUDO_DATA;
@@ -18,10 +21,6 @@ typedef 'hABCDEF01 SEED_2;
 // TEST HYPER PARAMETERS CASE 2
 typedef 16 MAX_STREAM_SIZE_PTR;
 typedef 10000 TEST_NUM;
-
-typedef enum {
-    WAITING, FirstChunk, SecondChunk
-} StreamSplitOutStatus deriving(Bits, Eq);
 
 interface RandomStreamSize;
     method ActionValue#(StreamSize) next();
@@ -95,7 +94,7 @@ module mkStreamConcatTb(Empty);
     Reg#(UInt#(32)) testFinishCntReg <- mkReg(0);
 
     rule testInit if (!isInitReg);
-        $display("INFO: ================start StreamConcatTb!==================");
+        $display("INFO: start mkStreamConcatTb!");
         isInitReg <= True;
     endrule
 
@@ -139,34 +138,33 @@ module mkStreamConcatTb(Empty);
 
     rule testOutput;
         let outStream = dut.outputStreamFifoOut.first;
-        checkDataStream(outStream, "Output Stream");
         StreamSize concatSize = concatSizeReg + unpack(zeroExtend(convertByteEn2BytePtr(outStream.byteEn)));
         if (outStream.isLast) begin
             let ideaSize = ideaConcatSizeFifo.first;
-            if (concatSize != ideaSize) begin
-                $display("Error: ideaSize=%d, realSize=%d", ideaSize, concatSize);
-                $finish();
-            end 
-            else begin
-                // $display("INFO: verify output ideaSize=%d, realSize=%d, ideaLastSize=%d", ideaSize, concatSize, ideaSize%getMaxFrameSize());
-                ideaConcatSizeFifo.deq;
-                testFinishCntReg <= testFinishCntReg + 1;
-            end
+            immAssert(
+                (concatSize == ideaSize),
+                "outStream length check @ mkStreamConcatTb::testOutput",
+                $format("ideaSize = %d, realSize = %d \n", ideaSize, concatSize)
+                );
+            // $display("INFO: verify output ideaSize=%d, realSize=%d, ideaLastSize=%d", ideaSize, concatSize, ideaSize%getMaxFrameSize());
+            ideaConcatSizeFifo.deq;
+            testFinishCntReg <= testFinishCntReg + 1;
             concatSizeReg <= 0;
         end
         else begin
             concatSizeReg <= concatSize;
-            if (outStream.data != getPseudoData()) begin
-                $display("Error: Wrong output data");
-                showDataStream(outStream);
-                $finish();
-            end
+            immAssert(
+                (outStream.data == getPseudoData()),
+                "outStream Data Check @ mkStreamConcatTb::testOutput",
+                $format(outStream)
+            );
         end
         dut.outputStreamFifoOut.deq;
     endrule
 
     rule testFinish;
         if (testFinishCntReg == fromInteger(valueOf(TEST_NUM)-1)) begin
+            $display("INFO: end mkStreamConcatTb");
             $finish();
         end
     endrule
@@ -195,7 +193,7 @@ module mkStreamSplitTb(Empty);
 
     rule testInit if (!isInitReg);
         isInitReg <= True;
-        $display("INFO: ================start StreamSplitTb!==================");
+        $display("INFO: start mkStreamSplitTb!");
     endrule
 
     rule testInput if (isInitReg && testCntReg < fromInteger(valueOf(TEST_NUM)));
@@ -227,36 +225,30 @@ module mkStreamSplitTb(Empty);
     rule testOutput if (isInitReg);
         let outStream = dut.outputStreamFifoOut.first;
         dut.outputStreamFifoOut.deq;
-        checkDataStream(outStream, "split output stream");
         StreamSize totalSize = totalRecvSizeReg + unpack(zeroExtend(convertByteEn2BytePtr(outStream.byteEn)));
-        
         if (outStream.isLast) begin
             if (hasRecvFirstChunkReg) begin
-                if (totalSize != ideaTotalSizeFifo.first) begin
-                    $display("Error: wrong total size, idea = %d, real = %d", ideaTotalSizeFifo.first, totalSize);
-                    showDataStream(outStream);
-                    $finish();
-                end
-                else begin
-                    // $display("INFO: receive total size", totalSize);
-                    ideaTotalSizeFifo.deq;
-                    testCntReg <= testCntReg + 1;
-                    hasRecvFirstChunkReg <= False;
-                    totalRecvSizeReg <= 0;
-                end
+                immAssert(
+                    (totalSize == ideaTotalSizeFifo.first),
+                    "outStream total length check @ mkStreamSplitTb",
+                    $format("Wrong total length, ideaLen=%d, realLen=%d \n", ideaTotalSizeFifo.first, totalSize)
+                );
+                // $display("INFO: receive total size", totalSize);
+                ideaTotalSizeFifo.deq;
+                testCntReg <= testCntReg + 1;
+                hasRecvFirstChunkReg <= False;
+                totalRecvSizeReg <= 0;
             end 
             else begin
-                if (totalSize != ideaSplitSizeFifo.first) begin
-                    $display("Error: wrong split location, idea = %d, real = %d", ideaSplitSizeFifo.first, totalSize);
-                    showDataStream(outStream);
-                    $finish();
-                end
-                else begin
-                    // $display("INFO: receive first chunk at %d, total size %d", ideaSplitSizeFifo.first, ideaTotalSizeFifo.first);
-                    ideaSplitSizeFifo.deq;
-                    hasRecvFirstChunkReg <= True;
-                    totalRecvSizeReg <= totalSize;
-                end
+                immAssert(
+                    (totalSize == ideaSplitSizeFifo.first),
+                    "outStream split location check @ mkStreamSplitTb",
+                    $format("Wrong split location, ideaLen=%d, realLen=%d \n", ideaSplitSizeFifo.first, totalSize)
+                );
+                // $display("INFO: receive first chunk at %d, total size %d", ideaSplitSizeFifo.first, ideaTotalSizeFifo.first);
+                ideaSplitSizeFifo.deq;
+                hasRecvFirstChunkReg <= True;
+                totalRecvSizeReg <= totalSize;
             end
         end
         else begin
@@ -266,6 +258,7 @@ module mkStreamSplitTb(Empty);
 
     rule testFinish;
         if (testCntReg == fromInteger(valueOf(TEST_NUM)-1)) begin
+            $display("INFO: end mkStreamSplitTb");
             $finish();
         end
     endrule
