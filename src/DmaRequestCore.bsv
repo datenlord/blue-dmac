@@ -1,5 +1,6 @@
 import FIFOF::*;
 import GetPut :: *;
+
 import SemiFifo::*;
 import PcieTypes::*;
 import DmaTypes::*;
@@ -7,10 +8,13 @@ import DmaTypes::*;
 
 typedef 4096                                BUS_BOUNDARY;
 typedef TAdd#(1, TLog#(BUS_BOUNDARY))       BUS_BOUNDARY_WIDTH;
+
 typedef Bit#(BUS_BOUNDARY_WIDTH)            PcieTlpMaxMaxPayloadSize;
 typedef Bit#(TLog#(BUS_BOUNDARY_WIDTH))     PcieTlpSizeWidth;
+
 typedef 128                                 DEFAULT_TLP_SIZE;
 typedef TAdd#(1, TLog#(DEFAULT_TLP_SIZE))   DEFAULT_TLP_SIZE_WIDTH;
+
 typedef 3                                   PCIE_TLP_SIZE_SETTING_WIDTH;
 typedef Bit#(PCIE_TLP_SIZE_SETTING_WIDTH)   PcieTlpSizeSetting;      
 
@@ -20,20 +24,23 @@ typedef struct {
 } ChunkRequestFrame deriving(Bits, Eq);                     
 
 interface ChunkCompute;
-    interface FifoIn#(DmaRequestFrame)  dmaRequests;
-    interface FifoOut#(DmaRequestFrame) chunkRequests;
+    interface FifoIn#(DmaRequestFrame)  dmaRequestFifoIn;
+    interface FifoOut#(DmaRequestFrame) chunkRequestFifoOut;
     interface Put#(PcieTlpSizeSetting)  setTlpMaxSize;
 endinterface 
 
 module mkChunkComputer (TRXDirection direction, ChunkCompute ifc);
-    FIFOF#(DmaRequestFrame) inputFifo <- mkFIFOF;
-    FIFOF#(DmaRequestFrame) outputFifo <- mkFIFOF;
-    FIFOF#(ChunkRequestFrame) splitFifo <- mkFIFOF;
-    Reg#(DmaMemAddr) tlpMaxSize <- mkReg(fromInteger(valueOf(DEFAULT_TLP_SIZE)));                   //MPS if isTX, MRRS else
+
+    FIFOF#(DmaRequestFrame)   inputFifo  <- mkFIFOF;
+    FIFOF#(DmaRequestFrame)   outputFifo <- mkFIFOF;
+    FIFOF#(ChunkRequestFrame) splitFifo  <- mkFIFOF;
+
+    Reg#(DmaMemAddr) newChunkPtrReg      <- mkReg(0);
+    Reg#(DmaMemAddr) totalLenRemainReg   <- mkReg(0);
+    Reg#(Bool)       isSplittingReg      <- mkReg(False);
+    
+    Reg#(DmaMemAddr)       tlpMaxSize      <- mkReg(fromInteger(valueOf(DEFAULT_TLP_SIZE)));
     Reg#(PcieTlpSizeWidth) tlpMaxSizeWidth <- mkReg(fromInteger(valueOf(DEFAULT_TLP_SIZE_WIDTH)));   
-    Reg#(DmaMemAddr) newChunkPtrReg <- mkReg(0);
-    Reg#(DmaMemAddr) totalLenRemainReg <- mkReg(0);
-    Reg#(Bool) isSplittingReg <- mkReg(False);
 
     function Bool hasBoundary(DmaRequestFrame request);
         let highIdx = (request.startAddr + request.length - 1) >> valueOf(BUS_BOUNDARY_WIDTH);
@@ -52,9 +59,10 @@ module mkChunkComputer (TRXDirection direction, ChunkCompute ifc);
         let request = inputFifo.first;
         inputFifo.deq;
         let offset = getOffset(request);
+        let firstLen = (request.length > tlpMaxSize) ? tlpMaxSize : request.length;
         splitFifo.enq(ChunkRequestFrame {
             dmaRequest: request,
-            firstChunkLen: hasBoundary(request) ? offset : tlpMaxSize
+            firstChunkLen: hasBoundary(request) ? offset : firstLen
         });
     endrule
 
@@ -96,8 +104,8 @@ module mkChunkComputer (TRXDirection direction, ChunkCompute ifc);
         end
     endrule
 
-    interface  dmaRequests = convertFifoToFifoIn(inputFifo);
-    interface  chunkRequests = convertFifoToFifoOut(outputFifo);
+    interface  dmaRequestFifoIn = convertFifoToFifoIn(inputFifo);
+    interface  chunkRequestFifoOut = convertFifoToFifoOut(outputFifo);
 
     interface Put setTlpMaxSize;
         method Action put (PcieTlpSizeSetting tlpSizeSetting);

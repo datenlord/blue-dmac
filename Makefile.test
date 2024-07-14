@@ -5,8 +5,9 @@ TESTBENCHS = \
 			TestStreamUtils.bsv \
             TestDmaCore.bsv
 
-TestStreamUtils					 = mkStreamConcatTb
-TestDmaCore.bsv                  = mkChunkComputerTb 
+TestStreamUtils.bsv					= mkStreamConcatTb \
+								 	    mkStreamSplitTb
+TestDmaCore.bsv                  	= mkChunkComputerTb 
 
 all: $(TESTBENCHS)
 

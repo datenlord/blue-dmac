@@ -1,5 +1,4 @@
 import AxiStreamTypes::*;
-import StreamUtils::*;
 
 
 typedef 512 PCIE_TLP_BYTES;
