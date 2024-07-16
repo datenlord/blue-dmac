@@ -28,12 +28,74 @@ interface StreamSplit;
 endinterface
 
 function DataBytePtr convertByteEn2BytePtr (ByteEn byteEn);
-    ByteEn byteEnTemp = byteEn;
     DataBytePtr ptr = 0;
-    while (byteEnTemp > 0) begin
-        byteEnTemp = byteEnTemp >> 1;
-        ptr = ptr + 1;
-    end
+    case(byteEn)
+        'h0000000000000001: ptr = 1;
+        'h0000000000000003: ptr = 2;
+        'h0000000000000007: ptr = 3;
+        'h000000000000000F: ptr = 4;
+        'h000000000000001F: ptr = 5;
+        'h000000000000003F: ptr = 6;
+        'h000000000000007F: ptr = 7;
+        'h00000000000000FF: ptr = 8;
+        'h00000000000001FF: ptr = 9;
+        'h00000000000003FF: ptr = 10;
+        'h00000000000007FF: ptr = 11;
+        'h0000000000000FFF: ptr = 12;
+        'h0000000000001FFF: ptr = 13;
+        'h0000000000003FFF: ptr = 14;
+        'h0000000000007FFF: ptr = 15;
+        'h000000000000FFFF: ptr = 16;
+        'h000000000001FFFF: ptr = 17;
+        'h000000000003FFFF: ptr = 18;
+        'h000000000007FFFF: ptr = 19;
+        'h00000000000FFFFF: ptr = 20;
+        'h00000000001FFFFF: ptr = 21;
+        'h00000000003FFFFF: ptr = 22;
+        'h00000000007FFFFF: ptr = 23;
+        'h0000000000FFFFFF: ptr = 24;
+        'h0000000001FFFFFF: ptr = 25;
+        'h0000000003FFFFFF: ptr = 26;
+        'h0000000007FFFFFF: ptr = 27;
+        'h000000000FFFFFFF: ptr = 28;
+        'h000000001FFFFFFF: ptr = 29;
+        'h000000003FFFFFFF: ptr = 30;
+        'h000000007FFFFFFF: ptr = 31;
+        'h00000000FFFFFFFF: ptr = 32;
+        'h00000001FFFFFFFF: ptr = 33;
+        'h00000003FFFFFFFF: ptr = 34;
+        'h00000007FFFFFFFF: ptr = 35;
+        'h0000000FFFFFFFFF: ptr = 36;
+        'h0000001FFFFFFFFF: ptr = 37;
+        'h0000003FFFFFFFFF: ptr = 38;
+        'h0000007FFFFFFFFF: ptr = 39;
+        'h000000FFFFFFFFFF: ptr = 40;
+        'h000001FFFFFFFFFF: ptr = 41;
+        'h000003FFFFFFFFFF: ptr = 42;
+        'h000007FFFFFFFFFF: ptr = 43;
+        'h00000FFFFFFFFFFF: ptr = 44;
+        'h00001FFFFFFFFFFF: ptr = 45;
+        'h00003FFFFFFFFFFF: ptr = 46;
+        'h00007FFFFFFFFFFF: ptr = 47;
+        'h0000FFFFFFFFFFFF: ptr = 48;
+        'h0001FFFFFFFFFFFF: ptr = 49;
+        'h0003FFFFFFFFFFFF: ptr = 50;
+        'h0007FFFFFFFFFFFF: ptr = 51;
+        'h000FFFFFFFFFFFFF: ptr = 52;
+        'h001FFFFFFFFFFFFF: ptr = 53;
+        'h003FFFFFFFFFFFFF: ptr = 54;
+        'h007FFFFFFFFFFFFF: ptr = 55;
+        'h00FFFFFFFFFFFFFF: ptr = 56;
+        'h01FFFFFFFFFFFFFF: ptr = 57;
+        'h03FFFFFFFFFFFFFF: ptr = 58;
+        'h07FFFFFFFFFFFFFF: ptr = 59;
+        'h0FFFFFFFFFFFFFFF: ptr = 60;
+        'h1FFFFFFFFFFFFFFF: ptr = 61;
+        'h3FFFFFFFFFFFFFFF: ptr = 62;
+        'h7FFFFFFFFFFFFFFF: ptr = 63;
+        'hFFFFFFFFFFFFFFFF: ptr = 64;
+        default           : ptr = 0;
+    endcase
     return ptr;
 endfunction
 
@@ -55,7 +117,7 @@ function DataBytePtr getMaxBytePtr ();
 endfunction
 
 // Concat two DataStream frames into one. StreamA.isLast must be True, otherwise the function will return a empty frame to end the stream.
-function ActionValue#(Tuple3#(DataStream, DataStream, DataBytePtr)) getConcatStream (DataStream streamA, DataStream streamB, DataBytePtr bytePtrA, DataBytePtr bytePtrB);
+function Tuple3#(DataStream, DataStream, DataBytePtr) getConcatStream (DataStream streamA, DataStream streamB, DataBytePtr bytePtrA, DataBytePtr bytePtrB);
     Bool isCallLegally = (streamA.isLast && bytePtrA <= getMaxBytePtr() && bytePtrA > 0);
     DataBitPtr bitPtrA = zeroExtend(bytePtrA) << fromInteger(valueOf(BYTE_WIDTH_WIDTH));
 
@@ -87,33 +149,20 @@ function ActionValue#(Tuple3#(DataStream, DataStream, DataBytePtr)) getConcatStr
 
     // package the return concatStream and remainStream
     if(isCallLegally) begin
-        concatStream = DataStream{
-            data: concatData,
-            byteEn: concatByteEn,
+        concatStream = DataStream {
+            data   : concatData,
+            byteEn : concatByteEn,
             isFirst: streamA.isFirst,
-            isLast: isConcatStreamLast
+            isLast : isConcatStreamLast
         };
-        remainStream = DataStream{
-            data: remainData,
-            byteEn: remainByteEn,
+        remainStream = DataStream {
+            data   : remainData,
+            byteEn : remainByteEn,
             isFirst: False,
-            isLast: True
+            isLast : True
         };
     end
-    return (
-        actionvalue
-            immAssert(
-                (streamA.isLast && bytePtrA <= getMaxBytePtr() && bytePtrA > 0),
-                "request check @ getConcatStream",
-                $format(
-                    "bytePtrA=%d should in range of 1~%d", bytePtrA, getMaxBytePtr(),
-                    "bytePtrB=%d should in range of 1~%d", bytePtrB, getMaxBytePtr(),
-                    "streamA.isLast=", fshow(streamA.isLast), "should be False"
-                )
-            );
-        return tuple3(concatStream, remainStream, remainBytePtr);
-        endactionvalue
-    );
+    return tuple3(concatStream, remainStream, remainBytePtr);
 endfunction
 
 (* synthesize *)
@@ -164,7 +213,6 @@ module mkStreamConcat (StreamConcat ifc);
             hasRemainReg <= False;
             isStreamAEnd <= False;
         end
-
         // StreamB or streamB + the remain data
         else if (prepareFifoB.notEmpty && isStreamAEnd) begin
             let streamB = prepareFifoB.first.stream;
@@ -172,7 +220,7 @@ module mkStreamConcat (StreamConcat ifc);
             prepareFifoB.deq;
             streamB.isFirst = False;
             if (hasRemainReg) begin
-                match{.concatStream, .remainStream, .remainBytePtr} <- getConcatStream(remainStreamReg, streamB, remainBytePtrReg, bytePtrB);
+                let {concatStream, remainStream, remainBytePtr} = getConcatStream(remainStreamReg, streamB, remainBytePtrReg, bytePtrB);
                 hasRemainReg     <= unpack(remainStream.byteEn[0]);
                 hasLastRemainReg <= streamB.isLast;
                 remainStreamReg  <= remainStream;
@@ -184,7 +232,6 @@ module mkStreamConcat (StreamConcat ifc);
             end
             isStreamAEnd <= !streamB.isLast;
         end
-        
         // StreamA or StreamA + first StreamB
         else if (prepareFifoA.notEmpty) begin
             let streamA = prepareFifoA.first.stream;
@@ -199,7 +246,7 @@ module mkStreamConcat (StreamConcat ifc);
             else if (streamA.isLast && prepareFifoB.notEmpty) begin
                 let streamB = prepareFifoB.first.stream;
                 let bytePtrB = prepareFifoB.first.bytePtr;
-                match{.concatStream, .remainStream, .remainBytePtr} <- getConcatStream(streamA, streamB, bytePtrA, bytePtrB);
+                let {concatStream, remainStream, remainBytePtr} = getConcatStream(streamA, streamB, bytePtrA, bytePtrB);
                 hasRemainReg     <= unpack(remainStream.byteEn[0]);
                 hasLastRemainReg <= streamB.isLast;
                 remainStreamReg  <= remainStream;
@@ -240,7 +287,7 @@ module mkStreamSplit(StreamSplit ifc);
     rule prepareStream;
         let stream = inputFifo.first;
         inputFifo.deq;
-        StreamWithPtr streamWithPtr = StreamWithPtr{
+        StreamWithPtr streamWithPtr = StreamWithPtr {
             stream: stream,
             bytePtr: convertByteEn2BytePtr(stream.byteEn) 
         };
@@ -279,50 +326,45 @@ module mkStreamSplit(StreamSplit ifc);
             hasRemainReg <= False;
             hasLastRemainReg <= False;
         end
-
         else if (assertFifo.notEmpty && splitPtrFifo.notEmpty) begin
             let stream = assertFifo.first.stream;
             let frameBytePtr = assertFifo.first.bytePtr;
-            match {.truncateBytePtr, .resBytePtr} = splitPtrFifo.first;
+            let {truncateBytePtr, resBytePtr} = splitPtrFifo.first;
             assertFifo.deq;
             splitPtrFifo.deq;
-
             // no operatation
             if (!hasRemainReg && truncateBytePtr == 0) begin
                 outputFifo.enq(stream);
             end
-
             // split the frame in this cycle to a last frame and a remain frame
             else if (!hasRemainReg && truncateBytePtr > 0) begin
                 DataBitPtr truncateBitPtr = zeroExtend(truncateBytePtr) << valueOf(BYTE_WIDTH_WIDTH);
                 DataBitPtr resBitPtr = zeroExtend(resBytePtr) << valueOf(BYTE_WIDTH_WIDTH);
-                outputFifo.enq(DataStream{
+                outputFifo.enq(DataStream {
                     data: (stream.data << resBitPtr) >> resBitPtr,
                     byteEn: (stream.byteEn << resBytePtr) >> resBytePtr,
                     isFirst: stream.isFirst,
                     isLast: True
                 });
-                DataStream remainStream = DataStream{
+                DataStream remainStream = DataStream {
                     data: stream.data >> truncateBitPtr,
                     byteEn: stream.byteEn >> truncateBytePtr,
                     isFirst: True,
                     isLast: True
                 };
-                hasRemainReg <= (remainStream.byteEn != 0);
+                hasRemainReg <= unpack(remainStream.byteEn[0]);
                 hasLastRemainReg <= stream.isLast;
                 remainBytePtrReg <= frameBytePtr - truncateBytePtr;
                 remainStreamReg <= remainStream;
             end
-
             // concat the new frame with the remainReg
             else if (hasRemainReg) begin
-                match {.concatStream, .remainStream, .remainBytePtr} <- getConcatStream(remainStreamReg, stream, remainBytePtrReg, frameBytePtr);
+                let {concatStream, remainStream, remainBytePtr} = getConcatStream(remainStreamReg, stream, remainBytePtrReg, frameBytePtr);
                 outputFifo.enq(concatStream);
                 hasRemainReg <= unpack(remainStream.byteEn[0]);
                 hasLastRemainReg <= stream.isLast;
                 remainStreamReg <= remainStream;
                 remainBytePtrReg <= remainBytePtr;
-                
             end
         end
     endrule
