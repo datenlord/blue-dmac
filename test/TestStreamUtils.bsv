@@ -35,8 +35,8 @@ function Data getPseudoData();
 endfunction
 
 function DataStream generatePsuedoStream (StreamSize size, Bool isFirst, Bool isLast);
-    let pseudoData = getPseudoData();
-    let offsetPtr = (unpack(zeroExtend(getMaxBytePtr())) - size) << valueOf(BYTE_WIDTH_WIDTH);
+    let pseudoData = getPseudoData;
+    let offsetPtr = (unpack(zeroExtend(getMaxBytePtr)) - size) << valueOf(BYTE_WIDTH_WIDTH);
     Data streamData = (pseudoData << offsetPtr) >> offsetPtr;
     return DataStream{
         data: streamData,
@@ -103,12 +103,12 @@ module mkStreamConcatTb(Empty);
             StreamSize sizeA <- streamASizeRandomValue.next;
             StreamSize sizeB <- streamBSizeRandomValue.next;
             ideaConcatSizeFifo.enq(sizeA + sizeB); 
-            testRoundReg <= (sizeA + sizeB) / getMaxFrameSize();
+            testRoundReg <= (sizeA + sizeB) / getMaxFrameSize;
 
-            let isLastA = (sizeA <= getMaxFrameSize());
-            let isLastB = (sizeB <= getMaxFrameSize());
-            let firstSizeA = isLastA ? sizeA : getMaxFrameSize();
-            let firstSizeB = isLastB ? sizeB : getMaxFrameSize();
+            let isLastA = (sizeA <= getMaxFrameSize);
+            let isLastB = (sizeB <= getMaxFrameSize);
+            let firstSizeA = isLastA ? sizeA : getMaxFrameSize;
+            let firstSizeB = isLastB ? sizeB : getMaxFrameSize;
 
             dut.inputStreamFirstFifoIn.enq(generatePsuedoStream(firstSizeA, True, isLastA));
             dut.inputStreamSecondFifoIn.enq(generatePsuedoStream(firstSizeB, True, isLastB));
@@ -121,14 +121,14 @@ module mkStreamConcatTb(Empty);
 
         else if (testRoundReg > 0) begin
             if (streamARemainSizeReg > 0 && dut.inputStreamFirstFifoIn.notFull) begin
-                Bool isLast =  streamARemainSizeReg <= getMaxFrameSize();
-                StreamSize size = isLast ? streamARemainSizeReg : getMaxFrameSize();
+                Bool isLast =  streamARemainSizeReg <= getMaxFrameSize;
+                StreamSize size = isLast ? streamARemainSizeReg : getMaxFrameSize;
                 dut.inputStreamFirstFifoIn.enq(generatePsuedoStream(size, False, isLast));
                 streamARemainSizeReg <= streamARemainSizeReg - size;
             end
             if (streamBRemainSizeReg > 0 && dut.inputStreamSecondFifoIn.notFull) begin
-                Bool isLast =  streamBRemainSizeReg <= getMaxFrameSize();
-                StreamSize size = isLast ? streamBRemainSizeReg : getMaxFrameSize();
+                Bool isLast =  streamBRemainSizeReg <= getMaxFrameSize;
+                StreamSize size = isLast ? streamBRemainSizeReg : getMaxFrameSize;
                 dut.inputStreamSecondFifoIn.enq(generatePsuedoStream(size, False, isLast));
                 streamBRemainSizeReg <= streamBRemainSizeReg - size;
             end
@@ -154,7 +154,7 @@ module mkStreamConcatTb(Empty);
         else begin
             concatSizeReg <= concatSize;
             immAssert(
-                (outStream.data == getPseudoData()),
+                (outStream.data == getPseudoData),
                 "outStream Data Check @ mkStreamConcatTb::testOutput",
                 $format(outStream)
             );
@@ -202,8 +202,8 @@ module mkStreamSplitTb(Empty);
             let size <- streamSizeRandomValue.next;
             let splitLocation <- splitLocationRandomValue.next;
             if (splitLocation < size) begin
-                let isLast = size <= getMaxFrameSize();
-                let firstSize = isLast ? size : getMaxFrameSize();
+                let isLast = size <= getMaxFrameSize;
+                let firstSize = isLast ? size : getMaxFrameSize;
                 let stream = generatePsuedoStream(firstSize, True, isLast);
                 dut.splitLocationFifoIn.enq(splitLocation);
                 dut.inputStreamFifoIn.enq(stream);
@@ -214,8 +214,8 @@ module mkStreamSplitTb(Empty);
             end
         end
         else begin
-            let isLast = streamSize2PutReg <= getMaxFrameSize();
-            let size = isLast ? streamSize2PutReg : getMaxFrameSize();
+            let isLast = streamSize2PutReg <= getMaxFrameSize;
+            let size = isLast ? streamSize2PutReg : getMaxFrameSize;
             let stream = generatePsuedoStream(size, False, isLast);
             dut.inputStreamFifoIn.enq(stream);
             streamSize2PutReg <= streamSize2PutReg - size;
