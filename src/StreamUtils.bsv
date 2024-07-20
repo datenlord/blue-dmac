@@ -118,7 +118,7 @@ endfunction
 
 // Concat two DataStream frames into one. StreamA.isLast must be True, otherwise the function will return a empty frame to end the stream.
 function Tuple3#(DataStream, DataStream, DataBytePtr) getConcatStream (DataStream streamA, DataStream streamB, DataBytePtr bytePtrA, DataBytePtr bytePtrB);
-    Bool isCallLegally = (streamA.isLast && bytePtrA <= getMaxBytePtr() && bytePtrA > 0);
+    Bool isCallLegally = (streamA.isLast && bytePtrA <= getMaxBytePtr && bytePtrA > 0);
     DataBitPtr bitPtrA = zeroExtend(bytePtrA) << fromInteger(valueOf(BYTE_WIDTH_WIDTH));
 
     // Fill the low PtrA bytes by streamA data
@@ -132,8 +132,8 @@ function Tuple3#(DataStream, DataStream, DataBytePtr) getConcatStream (DataStrea
     ByteEn concatByteEn  = concatByteEnA | concatByteEnB;
 
     // Get the remain bytes of streamB data
-    DataBitPtr  resBitPtr    = getMaxBitPtr() - bitPtrA;
-    DataBytePtr resBytePtr   = getMaxBytePtr() - bytePtrA;
+    DataBitPtr  resBitPtr    = getMaxBitPtr - bitPtrA;
+    DataBytePtr resBytePtr   = getMaxBytePtr - bytePtrA;
     Data        remainData   = streamB.data >> resBitPtr;
     ByteEn      remainByteEn = streamB.byteEn >> resBytePtr;
 
@@ -302,7 +302,7 @@ module mkStreamSplit(StreamSplit ifc);
         if (!isSplitted && unpack(zeroExtend(bytePtr)) + streamByteCntReg >= splitLocation) begin
             truncateBytePtr = truncate(pack(splitLocation - streamByteCntReg));
         end
-        DataBytePtr resBytePtr = getMaxBytePtr() - truncateBytePtr;
+        DataBytePtr resBytePtr = getMaxBytePtr - truncateBytePtr;
         splitPtrFifo.enq(tuple2(truncateBytePtr, resBytePtr));
         if (truncateBytePtr > 0 && !stream.isLast) begin
             isSplitted <= True;
