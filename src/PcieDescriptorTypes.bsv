@@ -6,28 +6,28 @@ typedef TDiv#(TSub#(PCIE_AXIS_DATA_WIDTH, RQ_DESCRIPTOR_WIDTH), DWORD_WIDTH) MAX
 
 typedef Bit#(1) ReserveBit1;
 
-typedef 64 CQ_DESCRIPTOR_WIDTH;
-typedef 3  ATTR_WIDTH; 
-typedef 3  TC_WIDTH;
-typedef 6  BAR_APERTURE_WIDTH;
-typedef 3  BAR_ID_WIDTH;
-typedef 8  TARGET_FUNCTION_WIDTH;
-typedef 8  TAG_WIDTH;
-typedef 16 BDF_WIDTH;
-typedef 4  REQ_TYPE_WIDTH;
-typedef 11 DWORD_COUNT_WIDTH;
-typedef 62 ADDR_WIDTH;
+typedef 64 DES_CQ_DESCRIPTOR_WIDTH;
+typedef 3  DES_ATTR_WIDTH; 
+typedef 3  DES_TC_WIDTH;
+typedef 6  DES_BAR_APERTURE_WIDTH;
+typedef 3  DES_BAR_ID_WIDTH;
+typedef 8  DES_TARGET_FUNCTION_WIDTH;
+typedef 8  DES_TAG_WIDTH;
+typedef 16 DES_BDF_WIDTH;
+typedef 4  DES_REQ_TYPE_WIDTH;
+typedef 11 DES_DWORD_COUNT_WIDTH;
+typedef 62 DES_ADDR_WIDTH;
 
-typedef Bit#(ATTR_WIDTH)            Attributes;
-typedef Bit#(TC_WIDTH)              TrafficClass;
-typedef Bit#(BAR_APERTURE_WIDTH)    BarAperture;
-typedef Bit#(BAR_ID_WIDTH)          BarId;
-typedef Bit#(TARGET_FUNCTION_WIDTH) TargetFunction;
-typedef Bit#(TAG_WIDTH)             Tag;
-typedef Bit#(BDF_WIDTH)             BusDeviceFunc;
-typedef Bit#(REQ_TYPE_WIDTH)        ReqType;
-typedef Bit#(DWORD_COUNT_WIDTH)     DwordCount;
-typedef Bit#(ADDR_WIDTH)            Address;
+typedef Bit#(DES_ATTR_WIDTH)            Attributes;
+typedef Bit#(DES_TC_WIDTH)              TrafficClass;
+typedef Bit#(DES_BAR_APERTURE_WIDTH)    BarAperture;
+typedef Bit#(DES_BAR_ID_WIDTH)          BarId;
+typedef Bit#(DES_TARGET_FUNCTION_WIDTH) TargetFunction;
+typedef Bit#(DES_TAG_WIDTH)             Tag;
+typedef Bit#(DES_BDF_WIDTH)             BusDeviceFunc;
+typedef Bit#(DES_REQ_TYPE_WIDTH)        ReqType;
+typedef Bit#(DES_DWORD_COUNT_WIDTH)     DwordCount;
+typedef Bit#(DES_ADDR_WIDTH)            Address;
 
 // 16bytes Completer Request Descriptor Format for Memory, I/O, and Atomic Options
 typedef struct {
@@ -50,6 +50,7 @@ typedef struct {
     TrafficClass    trafficClass;
     Tag             tag;
     BusDeviceFunc   requesterId;
+    DmaCsrAddr      reqAddr;
 } PcieCompleterRequestNonPostedStore deriving(Bits, Eq, Bounded, FShow);
 
 

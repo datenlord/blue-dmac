@@ -99,6 +99,10 @@ function DataBytePtr convertByteEn2BytePtr (ByteEn byteEn);
     return ptr;
 endfunction
 
+function Bool isByteEnZero(ByteEn byteEn) begin
+    return !unpack(remainStream.byteEn[0]);
+end
+
 function DataStream getEmptyStream ();
     return DataStream{
         data: 0,
@@ -221,7 +225,7 @@ module mkStreamConcat (StreamConcat ifc);
             streamB.isFirst = False;
             if (hasRemainReg) begin
                 let {concatStream, remainStream, remainBytePtr} = getConcatStream(remainStreamReg, streamB, remainBytePtrReg, bytePtrB);
-                hasRemainReg     <= unpack(remainStream.byteEn[0]);
+                hasRemainReg     <= !isByteEnZero(remainStream.byteEn);
                 hasLastRemainReg <= streamB.isLast;
                 remainStreamReg  <= remainStream;
                 remainBytePtrReg <= remainBytePtr;
@@ -247,7 +251,7 @@ module mkStreamConcat (StreamConcat ifc);
                 let streamB = prepareFifoB.first.stream;
                 let bytePtrB = prepareFifoB.first.bytePtr;
                 let {concatStream, remainStream, remainBytePtr} = getConcatStream(streamA, streamB, bytePtrA, bytePtrB);
-                hasRemainReg     <= unpack(remainStream.byteEn[0]);
+                hasRemainReg     <= !isByteEnZero(remainStream.byteEn);
                 hasLastRemainReg <= streamB.isLast;
                 remainStreamReg  <= remainStream;
                 remainBytePtrReg <= remainBytePtr;
@@ -352,24 +356,24 @@ module mkStreamSplit(StreamSplit ifc);
                     isFirst: True,
                     isLast: True
                 };
-                hasRemainReg <= unpack(remainStream.byteEn[0]);
+                hasRemainReg     <= !isByteEnZero(remainStream.byteEn);
                 hasLastRemainReg <= stream.isLast;
                 remainBytePtrReg <= frameBytePtr - truncateBytePtr;
-                remainStreamReg <= remainStream;
+                remainStreamReg  <= remainStream;
             end
             // concat the new frame with the remainReg
             else if (hasRemainReg) begin
                 let {concatStream, remainStream, remainBytePtr} = getConcatStream(remainStreamReg, stream, remainBytePtrReg, frameBytePtr);
                 outputFifo.enq(concatStream);
-                hasRemainReg <= unpack(remainStream.byteEn[0]);
+                hasRemainReg     <= !isByteEnZero(remainStream.byteEn);
                 hasLastRemainReg <= stream.isLast;
-                remainStreamReg <= remainStream;
+                remainStreamReg  <= remainStream;
                 remainBytePtrReg <= remainBytePtr;
             end
         end
     endrule
 
-    interface inputStreamFifoIn = convertFifoToFifoIn(inputFifo);
+    interface inputStreamFifoIn   = convertFifoToFifoIn(inputFifo);
     interface splitLocationFifoIn = convertFifoToFifoIn(splitLocationFifo);
     interface outputStreamFifoOut = convertFifoToFifoOut(outputFifo);
 
