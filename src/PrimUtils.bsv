@@ -13,3 +13,5 @@ function Action immAssert(Bool condition, String assertName, Fmt assertFmtMsg);
         end
     endaction
 endfunction
+
+function t getLowBytes(t data, tPtr aperture) provisos(Bits#(t, tSz), )

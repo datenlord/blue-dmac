@@ -1,4 +1,4 @@
-import AxiStreamTypes::*;
+import PcieAxiStreamTypes::*;
 
 
 typedef 512 PCIE_TLP_BYTES;
@@ -14,6 +14,7 @@ typedef 183 PCIE_COMPLETER_REQUEST_TUSER_WIDTH;
 typedef 81  PCIE_COMPLETER_COMPLETE_TUSER_WIDTH;
 typedef 137 PCIE_REQUESTER_REQUEST_TUSER_WIDTH;
 typedef 161 PCIE_REQUESTER_COMPLETE_TUSER_WIDTH;
+
 
 // PcieTlpCtl**: SideBand Signals delivered in tUser defined by PG213
 typedef 8  PCIE_TLP_FIRST_BE_WIDTH;
@@ -139,6 +140,7 @@ typedef struct {
 } PcieRequesterCompleteSideBandFrame deriving(Bits, Bounded, Eq);
 
 
+// PCIe raw interfaces
 typedef 2 PCIE_CR_NP_REQ_WIDTH;
 typedef 6 PCIE_CR_NP_REQ_COUNT_WIDTH;
 typedef Bit#(PCIE_CR_NP_REQ_WIDTH)          PcieNonPostedRequst;
@@ -146,10 +148,17 @@ typedef Bit#(PCIE_CR_NP_REQ_COUNT_WIDTH)    PcieNonPostedRequstCount;
 
 // Interface to PCIe IP Completer Interface
 (*always_ready, always_enabled*)
-interface RawPcieCompleter;
-    // TODO: the AxiStream in blue-wrapper has tDataWidth = tKeepWidth * BYTE_WIDTH, but the PCIe IP has tDataWidth = tKeepWidth * DWORD_WIDTH
-    (* prefix = "s_axis_cq_" *) interface RawAxiStreamSlave#(PCIE_TKEEP_WIDTH, PCIE_COMPLETER_REQUEST_TUSER_WIDTH) request;
-    (* prefix = "m_axis_cc_" *) interface RawAxiStreamMaster#(PCIE_TKEEP_WIDTH, PCIE_COMPLETER_COMPLETE_TUSER_WIDTH) complete;
+interface RawPcieCompleterRequest;
+    (* prefix = "s_axis_cq_" *) interface RawPcieAxiStreamSlave#(PCIE_COMPLETER_REQUEST_TUSER_WIDTH) rawAxiStreamSlave;
+    (* result = "pcie_cq_np_req" *) method PcieNonPostedRequst nonPostedReqCreditIncrement;
+    (* prefix = "" *) method Action nonPostedReqCreditCnt(
+        (* port = "pcie_cq_np_req_count" *) PcieNonPostedRequstCount );
+    method 
+endinterface
+
+(*always_ready, always_enabled*)
+interface RawPcieCompleterComplete;
+    (* prefix = "m_axis_cc_" *) interface RawAxiStreamMaster#(PCIE_COMPLETER_COMPLETE_TUSER_WIDTH) rawAxiStreamMaster;
 endinterface
 
 // Interface to PCIe IP Requester Interface
@@ -159,6 +168,8 @@ interface RawPcieRequester;
     (* prefix = "s_axis_rc_" *) interface RawAxiStreamSlave#(PCIE_TKEEP_WIDTH, usrWidth)   complete;
 endinterface
 
+
+// Pcie Configuration Interfaces
 typedef 10 PCIE_CFG_MGMT_ADDR_WIDTH;
 typedef 4  PCIE_CFG_MGMT_BE_WIDTH;
 typedef 8  PCIE_CFG_MGMT_FUNC_NUM_WIDTH;
@@ -264,3 +275,4 @@ interface RawPcieConfiguration;
     (* prefix = "" *)                    interface RawPcieCfgStatus         status;
     (* prefix = "pcie_tfc_" *)           interface RawPcieCfgTransmitFC     txFlowControl;
 endinterface
+
