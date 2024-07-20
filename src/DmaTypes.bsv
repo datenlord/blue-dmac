@@ -20,7 +20,6 @@ typedef TMul#(4, BYTE_WIDTH) DWORD_WIDTH;
 typedef 2 CONCAT_STREAM_NUM;
 
 typedef TDiv#(DATA_WIDTH, BYTE_WIDTH) BYTE_EN_WIDTH;
-typedef -1 MAX_BYTE_EN;
 
 typedef Bit#(DATA_WIDTH) Data;
 typedef Bit#(BYTE_EN_WIDTH) ByteEn;
