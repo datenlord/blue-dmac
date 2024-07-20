@@ -1,5 +1,6 @@
-import AxiStreamTypes::*;
+import Vector::*;
 
+import PcieAxiStreamTypes::*;
 
 typedef 512 PCIE_TLP_BYTES;
 typedef TLog#(PCIE_TLP_BYTES) PCIE_TLP_BYTES_WIDTH;
@@ -9,11 +10,13 @@ typedef 64  PCIE_TDATA_BYTES;
 typedef 16  PCIE_TDATA_DWORDS;
 // Indicate DWORD valid of tDATA
 typedef PCIE_TDATA_DWORDS PCIE_TKEEP_WIDTH;  
+
 // tUser width vary among RR, RC, CR and CC
 typedef 183 PCIE_COMPLETER_REQUEST_TUSER_WIDTH;
 typedef 81  PCIE_COMPLETER_COMPLETE_TUSER_WIDTH;
 typedef 137 PCIE_REQUESTER_REQUEST_TUSER_WIDTH;
 typedef 161 PCIE_REQUESTER_COMPLETE_TUSER_WIDTH;
+
 
 // PcieTlpCtl**: SideBand Signals delivered in tUser defined by PG213
 typedef 8  PCIE_TLP_FIRST_BE_WIDTH;
@@ -60,85 +63,78 @@ typedef Bit#(PCIE_TLP_RC_ISEOP_WIDTH)       PcieTlpCtlIsEopRC;
 
 // Signals the start of a new TLP, 6 bit.
 typedef struct {
+    Vector#(PCIE_TLP_ISSOP_WIDTH, PcieTlpCtlIsSopPtr) isSopPtrs;
     PcieTlpCtlIsSop                 isSop;
-    PcieTlpCtlIsSopPtr              isSopPtr0;
-    PcieTlpCtlIsSopPtr              isSopPtr1;
 } PcieTlpCtlIsSopCommon deriving(Bits, Bounded, Eq);
 
 // Signals the start of a new TLP, 12 bit.
 typedef struct {
+    Vector#(PCIE_TLP_RC_ISSOP_WIDTH, PcieTlpCtlIsSopPtr) isSopPtrs;
     PcieTlpCtlIsSopRC               isSop;
-    PcieTlpCtlIsSopPtr              isSopPtr0;
-    PcieTlpCtlIsSopPtr              isSopPtr1;
-    PcieTlpCtlIsSopPtr              isSopPtr2;
-    PcieTlpCtlIsSopPtr              isSopPtr3;
 } PcieTlpCtlIsSopReqCpl deriving(Bits, Bounded, Eq);
 
 // Indicates a TLP is ending in this beat, 10bit.
 typedef struct {
+    Vector#(PCIE_TLP_ISEOP_WIDTH, PcieTlpCtlIsEopPtr) isEopPtrs;
     PcieTlpCtlIsEop                 isEop;
-    PcieTlpCtlIsEopPtr              isEopPtr0;
-    PcieTlpCtlIsEopPtr              isEopPtr1;
 } PcieTlpCtlIsEopCommon deriving(Bits, Bounded, Eq);
 
 // Indicates a TLP is ending in this beat, 20bit.
 typedef struct {
+    Vector#(PCIE_TLP_RC_ISEOP_WIDTH, PcieTlpCtlIsEopPtr) isEopPtrs;
     PcieTlpCtlIsEopRC               isEop;
-    PcieTlpCtlIsEopPtr              isEopPtr0;
-    PcieTlpCtlIsEopPtr              isEopPtr1;
-    PcieTlpCtlIsEopPtr              isEopPtr2;
-    PcieTlpCtlIsEopPtr              isEopPtr3;
 } PcieTlpCtlIsEopReqCpl deriving(Bits, Bounded, Eq);
 
 // 183bit tUser of PcieCompleterRequeste AXIS-slave
 typedef struct {
-    PcieTlpCtlFirstByteEn           firstByteEn;
-    PcieTlpCtlLastByteEn            lastByteEn;
-    PcieTlpCtlByteEn                dataByteEn;  
-    PcieTlpCtlIsSopCommon           isSop;
-    PcieTlpCtlIsEopCommon           isEop;
-    Bool                            discontinue;
-    PcieTlpCtlTphPresent            tphPresent;
-    PcieTlpCtlTphType               tphType;
-    PcieTlpCtlTphSteeringTag        tphSteeringTag;
     PcieTlpCtlParity                parity;
+    PcieTlpCtlTphSteeringTag        tphSteeringTag;
+    PcieTlpCtlTphType               tphType;
+    PcieTlpCtlTphPresent            tphPresent;
+    Bool                            discontinue;
+    PcieTlpCtlIsEopCommon           isEop;
+    PcieTlpCtlIsSopCommon           isSop;
+    PcieTlpCtlByteEn                dataByteEn;  
+    PcieTlpCtlLastByteEn            lastByteEn;
+    PcieTlpCtlFirstByteEn           firstByteEn;
 } PcieCompleterRequestSideBandFrame deriving(Bits, Bounded, Eq);
 
 // 81bit tUser of PcieCompleterComplete AXIS-master
 typedef struct { 
-    PcieTlpCtlIsSopCommon           isSop;
-    PcieTlpCtlIsEopCommon           isEop;
-    Bool                            discontinue;
     PcieTlpCtlParity                parity;
+    Bool                            discontinue;
+    PcieTlpCtlIsEopCommon           isEop;
+    PcieTlpCtlIsSopCommon           isSop;
 } PcieCompleterCompleteSideBandFrame deriving(Bits, Bounded, Eq);
 
 // 137bit tUser of PcieRequesterRequeste AXIS-master
 typedef struct {
-    PcieTlpCtlFirstByteEn           firstByteEn;
-    PcieTlpCtlLastByteEn            lastByteEn;
-    PcieTlpCtlAddrOffset            addrOffset;
-    PcieTlpCtlIsSopCommon           isSop;
-    PcieTlpCtlIsEopCommon           isEop;
-    Bool                            discontinue;
-    PcieTlpCtlTphPresent            tphPresent;
-    PcieTlpCtlTphType               tphType;
-    PcieTlpCtlTphIndirectTagEn      tphIndirectTagEn;
-    PcieTlpCtlTphSteeringTag        tphSteeringTag;
-    PcieTlpCtlSeqNum                seqNum0;
-    PcieTlpCtlSeqNum                seqNum1;
     PcieTlpCtlParity                parity;
+    PcieTlpCtlSeqNum                seqNum1;
+    PcieTlpCtlSeqNum                seqNum0;
+    PcieTlpCtlTphSteeringTag        tphSteeringTag;
+    PcieTlpCtlTphIndirectTagEn      tphIndirectTagEn;
+    PcieTlpCtlTphType               tphType;
+    PcieTlpCtlTphPresent            tphPresent;
+    Bool                            discontinue;
+    PcieTlpCtlIsEopCommon           isEop;
+    PcieTlpCtlIsSopCommon           isSop;
+    PcieTlpCtlAddrOffset            addrOffset;
+    PcieTlpCtlLastByteEn            lastByteEn;
+    PcieTlpCtlFirstByteEn           firstByteEn;
 } PcieRequsterRequestSideBandFrame deriving(Bits, Bounded, Eq);
 
 // 161bit tUser of PcieRequesterComplete AXIS-slave
 typedef struct {
-    PcieTlpCtlByteEn                dataByteEn;  
-    PcieTlpCtlIsSopReqCpl           isSop;
-    PcieTlpCtlIsEopReqCpl           isEop;
-    Bool                            discontinue;
-    PcieTlpCtlParity                parity;
+PcieTlpCtlParity                parity;
+Bool                            discontinue;
+PcieTlpCtlIsEopReqCpl           isEop;
+PcieTlpCtlIsSopReqCpl           isSop;
+PcieTlpCtlByteEn                dataByteEn;  
 } PcieRequesterCompleteSideBandFrame deriving(Bits, Bounded, Eq);
 
 
+// PCIe raw interfaces
 typedef 2 PCIE_CR_NP_REQ_WIDTH;
 typedef 6 PCIE_CR_NP_REQ_COUNT_WIDTH;
 typedef Bit#(PCIE_CR_NP_REQ_WIDTH)          PcieNonPostedRequst;
@@ -146,19 +142,27 @@ typedef Bit#(PCIE_CR_NP_REQ_COUNT_WIDTH)    PcieNonPostedRequstCount;
 
 // Interface to PCIe IP Completer Interface
 (*always_ready, always_enabled*)
-interface RawPcieCompleter;
-    // TODO: the AxiStream in blue-wrapper has tDataWidth = tKeepWidth * BYTE_WIDTH, but the PCIe IP has tDataWidth = tKeepWidth * DWORD_WIDTH
-    (* prefix = "s_axis_cq_" *) interface RawAxiStreamSlave#(PCIE_TKEEP_WIDTH, PCIE_COMPLETER_REQUEST_TUSER_WIDTH) request;
-    (* prefix = "m_axis_cc_" *) interface RawAxiStreamMaster#(PCIE_TKEEP_WIDTH, PCIE_COMPLETER_COMPLETE_TUSER_WIDTH) complete;
+interface RawPcieCompleterRequest;
+    (* prefix = "s_axis_cq_" *) interface RawPcieAxiStreamSlave#(PCIE_COMPLETER_REQUEST_TUSER_WIDTH) rawAxiStreamSlave;
+    (* result = "pcie_cq_np_req" *) method PcieNonPostedRequst nonPostedReqCreditIncrement;
+    (* prefix = "" *) method Action nonPostedReqCreditCnt(
+        (* port = "pcie_cq_np_req_count" *) PcieNonPostedRequstCount nonPostedpReqCount );
+endinterface
+
+(*always_ready, always_enabled*)
+interface RawPcieCompleterComplete;
+    (* prefix = "m_axis_cc_" *) interface RawPcieAxiStreamMaster#(PCIE_COMPLETER_COMPLETE_TUSER_WIDTH) rawAxiStreamMaster;
 endinterface
 
 // Interface to PCIe IP Requester Interface
 (*always_ready, always_enabled*)
 interface RawPcieRequester;
-    (* prefix = "m_axis_rq_" *) interface RawAxiStreamMaster#(PCIE_TKEEP_WIDTH, usrWidth)  request;
-    (* prefix = "s_axis_rc_" *) interface RawAxiStreamSlave#(PCIE_TKEEP_WIDTH, usrWidth)   complete;
+    (* prefix = "m_axis_rq_" *) interface RawPcieAxiStreamMaster#(PCIE_REQUESTER_REQUEST_TUSER_WIDTH)  request;
+    (* prefix = "s_axis_rc_" *) interface RawPcieAxiStreamSlave#(PCIE_REQUESTER_COMPLETE_TUSER_WIDTH)  complete;
 endinterface
 
+
+// Pcie Configuration Interfaces
 typedef 10 PCIE_CFG_MGMT_ADDR_WIDTH;
 typedef 4  PCIE_CFG_MGMT_BE_WIDTH;
 typedef 8  PCIE_CFG_MGMT_FUNC_NUM_WIDTH;
@@ -264,3 +268,4 @@ interface RawPcieConfiguration;
     (* prefix = "" *)                    interface RawPcieCfgStatus         status;
     (* prefix = "pcie_tfc_" *)           interface RawPcieCfgTransmitFC     txFlowControl;
 endinterface
+
