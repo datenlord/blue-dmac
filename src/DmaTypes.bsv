@@ -29,12 +29,7 @@ typedef Bit#(TAdd#(1, TLog#(BYTE_EN_WIDTH))) DataBytePtr;
 typedef struct {
     DmaMemAddr startAddr;
     DmaMemAddr length;
-} DmaRequestFrame deriving(Bits, Bounded, Eq);
-
-typedef struct {
-    DMACsrAddr address;
-    DMACsrValue value;
-} DmaCsrFrame deriving(Bits, Bounded, Eq);
+} DmaRequest deriving(Bits, Bounded, Eq);
 
 typedef enum {
     DMA_RX, 
@@ -48,8 +43,8 @@ typedef struct {
     Bool isLast;
 } DataStream deriving(Bits, Bounded, Eq);
 
-instance FShow#(DmaRequestFrame);
-    function Fmt fshow(DmaRequestFrame request);
+instance FShow#(DmaRequest);
+    function Fmt fshow(DmaRequest request);
         return ($format("<DmaRequest: startAddr=%h, length=%h", request.startAddr, request.length));
     endfunction
 endinstance
@@ -69,3 +64,23 @@ instance FShow#(DataStream);
         ));
     endfunction
 endinstance
+
+interface DmaCardToHostWrite;
+    interface FifoIn#(DataStream)       dataFifoIn; 
+    interface FifoIn#(DmaRequest)       reqFifoIn;
+    method Bool isDone;   // Assert when all data have transmitted to the PCIe
+endinterface
+
+interface DmaCardToHostRead;
+    interface FifoIn#(DmaRequest)       reqFifoIn;
+    interface FifoOut#(DataStream)      dataFifoOut;
+endinterface
+
+interface DmaHostToCardWrite;
+    interface FifoOut#(DmaCsrValue)     dataFifoOut;
+    interface FifoOut#(DmaCsrAddr)      reqFifoOut;
+endinterface
+
+interface DmaHostToCardRead;
+    interface FifoOut#(DmaCsrAddr)      reqFifoOut;
+    interface FifoIn#(DmaCsrValue)      dataFifoIn;    
