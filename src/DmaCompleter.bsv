@@ -1,20 +1,33 @@
-import FIFO::*;
+import FIFOF::*;
 
+import SemiFifo::*;
+import PrimUtils::*;
 import PcieAxiStreamTypes::*;
 import PcieTypes::*;
 import PcieDescriptorTypes::*;
 import DmaTypes::*;
 
-typedef 1   IDEA_DWORD_CNT_OF_CSR;
+typedef 1 IDEA_DWORD_CNT_OF_CSR;
+typedef 4 IDEA_FIRST_BE_HIGH_VALID_PTR_OF_CSR;
+
 typedef 64  CMPL_NPREQ_INFLIGHT_NUM;
 typedef 20  CMPL_NPREQ_WAITING_CLKS;
 typedef 2'b11 NP_CREDIT_INCREMENT;
 typedef 2'b00 NP_CREDIT_NOCHANGE;
 
+typedef PcieAxiStream#(PCIE_COMPLETER_REQUEST_TUSER_WIDTH)  CmplReqAxiStream;
+typedef PcieAxiStream#(PCIE_COMPLETER_COMPLETE_TUSER_WIDTH) CmplCmplAxiStream;
+
 typedef struct {
     DmaCsrAddr  addr;
     DmaCsrValue value;
-} CsrWriteReq deriving(Bits, Eq, Bounded, FShow);
+} CsrWriteReq deriving(Bits, Eq, Bounded);
+
+instance FShow#(CsrWriteReq);
+    function Fmt fshow(CsrWriteReq wrReq);
+        return ($format("<CsrWriteRequest: address=%h, value=%h", wrReq.addr, wrReq.value));
+    endfunction
+endinstance
 
 typedef DmaCsrValue CsrReadResp;
 
@@ -32,38 +45,38 @@ interface DmaCompleter;
 endinterface
 
 interface CompleterRequest;
-    interface FifoIn#(PcieAxiStream) axiStreamFifoIn;
-    interface FifoOut#(CsrWriteReq)  csrWriteReqFifoOut;
-    interface FifoOut#(CsrReadReq)   csrReadReqFifoOut;
+    interface FifoIn#(CmplReqAxiStream) axiStreamFifoIn;
+    interface FifoOut#(CsrWriteReq)     csrWriteReqFifoOut;
+    interface FifoOut#(CsrReadReq)      csrReadReqFifoOut;
 endinterface
 
 interface CompleterComplete;
-    interface FifoOut#(PcieAxiStream) axiStreamFifoOut;
-    interface FifoIn#(CsrReadResp)    csrReadRespFifoIn;
-    interface FifoIn#(CsrReadReq)     csrReadReqFifoIn;
+    interface FifoOut#(CmplCmplAxiStream) axiStreamFifoOut;
+    interface FifoIn#(CsrReadResp)        csrReadRespFifoIn;
+    interface FifoIn#(CsrReadReq)         csrReadReqFifoIn;
 endinterface
 
 // PcieCompleter does not support straddle mode now
 // The completer is designed only for CSR Rd/Wr, and will ignore any len>32bit requests 
 (* synthesize *)
 module mkCompleterRequest(CompleterRequest);
-    FIFOF#(PcieAxiStream)   inFifo    <- mkFIFOF;
-    FIFOF#(CsrWriteReq)     wrReqFifo <- mkFIFOF;
-    FIFOF#(CsrReadReq)      rdReqFifo <- mkFIFOF;
+    FIFOF#(CmplReqAxiStream)   inFifo    <- mkFIFOF;
+    FIFOF#(CsrWriteReq)        wrReqFifo <- mkFIFOF;
+    FIFOF#(CsrReadReq)         rdReqFifo <- mkFIFOF;
 
     Reg#(Bool) isInPacket <- mkReg(False);
-    Reg#(Uint#(32)) illegalPcieReqCntReg <- mkReg(0);
+    Reg#(UInt#(32)) illegalPcieReqCntReg <- mkReg(0);
 
-    function PcieCompleterRequestDescriptor getDescriptorFromFirstBeat(PcieAxiStream axiStream);
-        return pack(axiStream.tDATA[valueOf(CQ_DESCRIPTOR_WIDTH)-1:0]);
+    function PcieCompleterRequestDescriptor getDescriptorFromFirstBeat(CmplReqAxiStream axiStream);
+        return unpack(axiStream.tData[valueOf(DES_CQ_DESCRIPTOR_WIDTH)-1:0]);
     endfunction
 
-    function Data getDataFromFirstBeat(PcieAxiStream axiStream);
-        return axiStream.tData >> valueOf(CQ_DESCRIPTOR_WIDTH);
+    function Data getDataFromFirstBeat(CmplReqAxiStream axiStream);
+        return axiStream.tData >> valueOf(DES_CQ_DESCRIPTOR_WIDTH);
     endfunction
 
-    function Bool isFirstBytesAllValid(PcieCompleterCompleteSideBandFrame sideBand);
-        return (sideBand.firstByteEn[valueOf(PCIE_TLP_FIRST_BE_WIDTH)-1] == 1);
+    function Bool isFirstBytesAllValid(PcieCompleterRequestSideBandFrame sideBand);
+        return (sideBand.firstByteEn[valueOf(IDEA_FIRST_BE_HIGH_VALID_PTR_OF_CSR)-1] == 1);
     endfunction
 
     function DmaCsrAddr getCsrAddrFromCqDescriptor(PcieCompleterRequestDescriptor descriptor);
@@ -81,36 +94,36 @@ module mkCompleterRequest(CompleterRequest);
     rule parse;
         inFifo.deq;
         let axiStream = inFifo.first;
-        PcieCompleterRequestSideBandFrame sideBand = pack(axiStream.tUser);
-        isInPacket <= !axiStream.isLast;
+        PcieCompleterRequestSideBandFrame sideBand = unpack(axiStream.tUser);
+        isInPacket <= !axiStream.tLast;
         if (!isInPacket) begin
             let descriptor  = getDescriptorFromFirstBeat(axiStream);
-            case (descriptor.reqType) begin
-                MEM_WRITE_REQ: begin
-                    if (descriptor.dwordCnt == valueOf(IDEA_DWORD_CNT_OF_CSR) && isFirstBytesAllValid) begin
+            case (descriptor.reqType) 
+                fromInteger(valueOf(MEM_WRITE_REQ)): begin
+                    if (descriptor.dwordCnt == fromInteger(valueOf(IDEA_DWORD_CNT_OF_CSR)) && isFirstBytesAllValid(sideBand)) begin
                         let firstData = getDataFromFirstBeat(axiStream);
                         DmaCsrValue wrValue = firstData[valueOf(DMA_CSR_ADDR_WIDTH)-1:0];
                         DmaCsrAddr wrAddr = getCsrAddrFromCqDescriptor(descriptor);
                         let wrReq = CsrWriteReq {
-                            address : wrAddr,
+                            addr    : wrAddr,
                             value   : wrValue
-                        }
+                        };
                         wrReqFifo.enq(wrReq);
                     end
                     else begin
                         illegalPcieReqCntReg <= illegalPcieReqCntReg + 1;
                     end
                 end
-                MEM_READ_REQ: begin
+                fromInteger(valueOf(MEM_READ_REQ)): begin
                     let rdReqAddr = getCsrAddrFromCqDescriptor(descriptor);
                     let rdReq = CsrReadReq{
                         rdAddr: rdReqAddr,
                         npInfo: descriptor
-                    }
+                    };
                     rdReqFifo.enq(rdReq);
                 end
-                default: illegalPcieReqCntReg <= illegalPcieReqCntReg + 1;
-            end
+                default: begin $display("INFO"); illegalPcieReqCntReg <= illegalPcieReqCntReg + 1; end 
+            endcase
         end
     endrule
 
@@ -121,31 +134,33 @@ endmodule
 
 (* synthesize *)
 module mkCompleterComplete(CompleterComplete);
-    FIFOF#(PcieAxiStream) outFifo    <- mkFIFOF;
-    FIFOF#(CsrReadResp)   rdRespFifo <- mkFIFOF;
-    FIFOF#(CsrReadReq)    rdReqFifo  <- mkFIFOF;
+    FIFOF#(CmplCmplAxiStream) outFifo    <- mkFIFOF;
+    FIFOF#(CsrReadResp)       rdRespFifo <- mkFIFOF;
+    FIFOF#(CsrReadReq)        rdReqFifo  <- mkFIFOF;
 
     // TODO: the logic of cc
 
     interface axiStreamFifoOut   = convertFifoToFifoOut(outFifo);
     interface csrReadRespFifoIn  = convertFifoToFifoIn(rdRespFifo);
-    interface csrReadReqFifoOut  = convertFifoToFifoIn(rdReqFifo);
+    interface csrReadReqFifoIn   = convertFifoToFifoIn(rdReqFifo);
 endmodule
 
 (* synthesize *)
 module mkDmaCompleter(DmaCompleter);
-    CompleterRequest  cmplRequest  = mkCompleterRequest;
-    CompleterComplete cmplComplete = mkCompleterComplete;
+    CompleterRequest  cmplRequest  <- mkCompleterRequest;
+    CompleterComplete cmplComplete <- mkCompleterComplete;
 
     FIFOF#(DmaCsrValue) h2cCsrWriteDataFifo <- mkFIFOF;
     FIFOF#(DmaCsrAddr)  h2cCsrWriteReqFifo  <- mkFIFOF;
     FIFOF#(DmaCsrAddr)  h2cCsrReadReqFifo   <- mkFIFOF;
     FIFOF#(DmaCsrValue) h2cCsrReadDataFifo  <- mkFIFOF;
-    CounteredFIFOF#(csrReadReq)  csrRdReqStoreFifo <- mkCounteredFIFOF(CMPL_NPREQ_INFLIGHT_NUM);
+    CounteredFIFOF#(CsrReadReq)  csrRdReqStoreFifo <- mkCounteredFIFOF(valueOf(CMPL_NPREQ_INFLIGHT_NUM));
 
-    Reg#(PcieNonPostedRequst) npReqCreditCtrlReg <- mkReg(valueOf(NP_CREDIT_INCREMENT));
+    Reg#(PcieNonPostedRequst) npReqCreditCtrlReg <- mkReg(fromInteger(valueOf(NP_CREDIT_INCREMENT)));
     Reg#(PcieNonPostedRequstCount) npReqCreditCntReg <- mkReg(0);
 
+    let rawAxiStreamSlaveIfc  <- mkFifoInToRawPcieAxiStreamSlave(cmplRequest.axiStreamFifoIn);
+    let rawAxiStreamMasterIfc <- mkFifoOutToRawPcieAxiStreamMaster(cmplComplete.axiStreamFifoOut);
 
     rule genCsrWriteReq;
         let wrReq = cmplRequest.csrWriteReqFifoOut.first;
@@ -164,37 +179,37 @@ module mkDmaCompleter(DmaCompleter);
     rule procCsrReadResp;
         let req = csrRdReqStoreFifo.first;
         let resp = h2cCsrReadDataFifo.first;
-        cmplComplete.csrReadRespFifoIn(resp);
-        cmplComplete.csrReadReqFifoIn(req);
+        cmplComplete.csrReadRespFifoIn.enq(resp);
+        cmplComplete.csrReadReqFifoIn.enq(req);
     endrule
 
     rule npBackPressure;
-        if (csrRdReqDescriptorFifo.getCurSize == fromInteger(valueOf(TDiv#(CMPL_NPREQ_INFLIGHT_NUM,2)))) begin
-            npReqCreditCtrlReg <= valueOf(NP_CREDIT_NOCHANGE);
+        if (csrRdReqStoreFifo.getCurSize == fromInteger(valueOf(TDiv#(CMPL_NPREQ_INFLIGHT_NUM,2)))) begin
+            npReqCreditCtrlReg <= fromInteger(valueOf(NP_CREDIT_NOCHANGE));
         end
         else begin
-            npReqCreditCtrlReg <= valueOf(NP_CREDIT_INCREMENT);
+            npReqCreditCtrlReg <= fromInteger(valueOf(NP_CREDIT_INCREMENT));
         end
     endrule
 
-    interface rawCompleterRequest;
-        interface rawAxiStreamSlave = mkFifoInToRawPcieAxiStreamSlave#(cmplRequest.axiStreamFifoIn);
+    interface RawPcieCompleterRequest rawCompleterRequest;
+        interface rawAxiStreamSlave = rawAxiStreamSlaveIfc;
         method PcieNonPostedRequst nonPostedReqCreditIncrement = npReqCreditCtrlReg;
         method Action nonPostedReqCreditCnt(PcieNonPostedRequstCount nonPostedpReqCount);
             npReqCreditCntReg <= nonPostedpReqCount;
         endmethod
     endinterface
 
-    interface rawCompleterComplete;
-        interface rawAxiStreamSlave = mkFifoOutToRawPcieAxiStreamMaster#(cmplComplete.axiStreamFifoOut);
+    interface RawPcieCompleterComplete rawCompleterComplete;
+        interface rawAxiStreamMaster = rawAxiStreamMasterIfc;
     endinterface
 
-    interface h2cWrite;
+    interface DmaHostToCardWrite h2cWrite;
         interface dataFifoOut = convertFifoToFifoOut(h2cCsrWriteDataFifo);
         interface reqFifoOut  = convertFifoToFifoOut(h2cCsrWriteReqFifo);
     endinterface
 
-    interface h2cRead;
+    interface DmaHostToCardRead h2cRead;
         interface reqFifoOut  = convertFifoToFifoOut(h2cCsrReadReqFifo);
         interface dataFifoIn  = convertFifoToFifoIn(h2cCsrReadDataFifo);
     endinterface
@@ -202,8 +217,6 @@ module mkDmaCompleter(DmaCompleter);
     // TODO: get internal registers value
     method DmaCsrValue getRegisterValue(DmaCsrAddr addr);
         return 0;
-    method
+    endmethod
 
 endmodule
-
-module mkWriteReqTo

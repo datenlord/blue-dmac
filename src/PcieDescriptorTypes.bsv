@@ -8,7 +8,7 @@ typedef Bit#(1) ReserveBit1;
 typedef Bit#(2) ReserveBit2;
 typedef Bit#(6) ReserveBit6;
 
-typedef 64 DES_CQ_DESCRIPTOR_WIDTH;
+typedef 128 DES_CQ_DESCRIPTOR_WIDTH;
 typedef 3  DES_ATTR_WIDTH; 
 typedef 3  DES_TC_WIDTH;
 typedef 6  DES_BAR_APERTURE_WIDTH;
@@ -65,7 +65,7 @@ typedef struct {
     ReserveBit1     reserve0;
     Attributes      attributes;
     TrafficClass    trafficClass;
-    Bool            completerIdEn
+    Bool            completerIdEn;
     BusDeviceFunc   completerId;
     Tag             tag;
     // DW + 1
@@ -81,9 +81,7 @@ typedef struct {
     ReserveBit6     reserve3;
     AddrType        addrType;
     LowerAddr       lowerAddr;
-}
-
-
+} PcieCompleterCompleteDescriptor deriving(Bits, Eq, Bounded, FShow);
 
 // Pcie Tlp types of descriptor
 typedef 4'b0000 MEM_READ_REQ;

@@ -13,7 +13,7 @@ TEST_LOG=run.log
 TEST_DIR=test
 cd $TEST_DIR
 truncate -s 0 $TEST_LOG
-FILES=`ls TestDmaCore.bsv`
+FILES=`ls TestDmaCompleter.bsv`
 ###########################################################################
 for FILE in $FILES; do
     # echo $FILE
