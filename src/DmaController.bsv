@@ -23,8 +23,8 @@ interface DmaController#(numeric type dataWidth);
 endinterface
 
 module mkDmaController(DmaController);
-    DmaCompleter completer = mkDmaCompleter;
-    DmaRequester requester = mkDmaRequester;
+    DmaCompleter completer <- mkDmaCompleter;
+    DmaRequester requester <- mkDmaRequester;
 
     interface c2hWrite = requester.c2hWrite;
     interface c2hRead  = requester.c2hRead;
