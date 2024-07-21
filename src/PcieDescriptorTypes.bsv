@@ -53,14 +53,6 @@ typedef struct {
     AddrType        addrType;
 } PcieCompleterRequestDescriptor deriving(Bits, Eq, Bounded, FShow);
 
-typedef struct {
-    Attributes      attributes;
-    TrafficClass    trafficClass;
-    Tag             tag;
-    BusDeviceFunc   requesterId;
-    DmaCsrAddr      reqAddr;
-} PcieCompleterRequestNonPostedStore deriving(Bits, Eq, Bounded, FShow);
-
 typedef 3  DES_CMPL_STATUS_WIDTH;
 typedef 13 DES_CMPL_BYTE_CNT_WIDTH;
 typedef 7  DES_LOWER_ADDR_WIDTH;
