@@ -9,19 +9,23 @@ typedef 1   IDEA_DWORD_CNT_OF_CSR;
 typedef 10  CMPL_NPREQ_INFLIGHT_NUM;
 typedef 20  CMPL_NPREQ_WAITING_CLKS;
 
-typedef DmaCsrFrame CsrWriteReq;
-typedef DmaCsrFrame CsrReadResp;
+typedef struct {
+    DmaCsrAddr  addr;
+    DmaCsrValue value;
+} CsrWriteReq deriving(Bits, Eq, Bounded, FShow);
+
+typedef DmaCsrValue CsrReadResp;
+
 typedef struct {
     DmaCsrAddr rdAddr;
     PcieCompleterRequestNonPostedStore npInfo;
-} CsrReadReq;
+} CsrReadReq deriving(Bits, Eq, Bounded, FShow);
 
 interface Completer;
     interface RawPcieCompleterRequest  rawCompleterRequest;
     interface RawPcieCompleterComplete rawCompleterComplete;
-    interface FifoOut#(DmaCsrFrame)    csrWriteReqFifoOut;
-    interface FifoIn#(DmaCsrFrame)     csrReadRespFifoIn;
-    interface FifoOut#(DmaCsrAddr)     csrReadReqFifoOut;
+    interface DmaHostToCardWrite       h2cCsrWrite;
+    interface DmaHostToCardRead        h2cCsrRead;
     method DmaCsrValue getRegisterValue(DmaCsrAddr addr);
 endinterface
 

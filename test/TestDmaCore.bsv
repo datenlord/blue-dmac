@@ -27,7 +27,7 @@ module mkChunkComputerTb(Empty);
     Randomize#(DmaMemAddr) startAddrRandomVal <- mkConstrainedRandomizer(0, fromInteger(valueOf(MAX_ADDRESS)-1));
     Randomize#(DmaMemAddr) lengthRandomVal    <- mkConstrainedRandomizer(1, fromInteger(valueOf(MAX_TEST_LENGTH)));
 
-    function Bool hasBoundary(DmaRequestFrame request);
+    function Bool hasBoundary(DmaRequest request);
         let highIdx = (request.startAddr + request.length - 1) >> valueOf(BUS_BOUNDARY_WIDTH);
         let lowIdx = request.startAddr >> valueOf(BUS_BOUNDARY_WIDTH);
         return (highIdx > lowIdx);
@@ -47,7 +47,7 @@ module mkChunkComputerTb(Empty);
         DmaMemAddr testLength <- lengthRandomVal.next;
         let testEnd = testAddr + testLength - 1;
         if (testEnd > testAddr && testEnd <= fromInteger(valueOf(MAX_ADDRESS))) begin 
-            let request = DmaRequestFrame{
+            let request = DmaRequest{
                 startAddr: testAddr,
                 length: testLength
             };
