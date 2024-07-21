@@ -10,8 +10,8 @@ typedef 32 DMA_CSR_ADDR_WIDTH;
 typedef 32 DMA_CSR_DATA_WIDTH;
 
 typedef Bit#(DMA_MEM_ADDR_WIDTH) DmaMemAddr;
-typedef Bit#(DMA_CSR_ADDR_WIDTH) DMACsrAddr;
-typedef Bit#(DMA_CSR_DATA_WIDTH) DMACsrValue;
+typedef Bit#(DMA_CSR_ADDR_WIDTH) DmaCsrAddr;
+typedef Bit#(DMA_CSR_DATA_WIDTH) DmaCsrValue;
 
 typedef 8 BYTE_WIDTH;
 typedef TLog#(BYTE_WIDTH) BYTE_WIDTH_WIDTH;
@@ -49,12 +49,6 @@ instance FShow#(DmaRequest);
     endfunction
 endinstance
 
-instance FShow#(DmaCsrFrame);
-    function Fmt fshow(DmaCsrFrame csr);
-        return ($format("<CsrFrame: addr=%h, value=%h", csr.address, csr.value));
-    endfunction
-endinstance
-
 instance FShow#(DataStream);
     function Fmt fshow(DataStream stream);
         return ($format("<DataStream      \n",
@@ -84,3 +78,4 @@ endinterface
 interface DmaHostToCardRead;
     interface FifoOut#(DmaCsrAddr)      reqFifoOut;
     interface FifoIn#(DmaCsrValue)      dataFifoIn;    
+endinterface
