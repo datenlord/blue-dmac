@@ -13,8 +13,8 @@ interface TestDmacWrRdLoop;
     (* prefix = "" *) interface RawXilinxPcieIp rawPcie;
 endinterface
 
-(* synthesize *)
-module mkTestDmacCsrWrRdLoop(TestDmacWrRdLoop);
+(* synthesize, clock_prefix = "user_clk", reset_prefix = "user_reset" *)
+module mkTestDmacCsrWrRdLoop((* reset="sys_rst" *) Reset sysRst, TestDmacWrRdLoop ifc);
 
     DmaController dmac <- mkDmaController;
 

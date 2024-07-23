@@ -37,5 +37,7 @@ module mkDmaController(DmaController);
         interface completerRequest  = completer.rawCompleterRequest;
         interface completerComplete = completer.rawCompleterComplete;
         interface configuration     = pcieConfigurator.rawConfiguration;
+        method Action linkUp(Bool isLinkUp);
+        endmethod
     endinterface
 endmodule
