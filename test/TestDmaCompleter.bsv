@@ -95,3 +95,52 @@ module mkTestDmaCompleterRequest(Empty);
     endrule
 
 endmodule
+
+(* doc = "testcase" *) 
+module mkTestDmaCompleter(Empty);
+    DmaCompleter dut <- mkDmaCompleter;
+    Reg#(Bool) isInitReg <- mkReg(False);
+
+    rule alwaysEnables;
+        dut.rawCompleterComplete.rawAxiStreamMaster.tReady(True);
+        dut.rawCompleterRequest.nonPostedReqCreditCnt(32);
+    endrule
+
+    rule testInit;
+        let testAxiStram = genPseudoHostWriteRequest;
+        if (!isInitReg) begin
+            $display("INFO: Start Completer test");
+            dut.rawCompleterRequest.rawAxiStreamSlave.tValid(
+                True,
+                testAxiStram.tData,
+                testAxiStram.tKeep,
+                testAxiStram.tLast,
+                testAxiStram.tUser
+            );
+        isInitReg <= True;
+        end
+        else begin
+            dut.rawCompleterRequest.rawAxiStreamSlave.tValid(
+                False,
+                0,
+                0,
+                False,
+                0
+            );
+        end
+    endrule
+
+    rule testOutput if (isInitReg);
+        let wrData = dut.h2cWrite.dataFifoOut.first;
+        dut.h2cWrite.dataFifoOut.deq;
+        let wrAddr = dut.h2cWrite.reqFifoOut.first;
+        dut.h2cWrite.reqFifoOut.deq;
+        immAssert(
+            (wrAddr == fromInteger(valueOf(TEST_ADDR)) && wrData == fromInteger(valueOf(TEST_DATA))),
+            "wrReq test @ mkTestDmaCompleter",
+            $format("write value: %h, write addr: %h", wrData, wrAddr)
+        );
+        $display("INFO: Pass Completer test");
+        $finish();
+    endrule
+endmodule

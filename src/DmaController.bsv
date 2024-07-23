@@ -1,11 +1,12 @@
 import FIFOF::*;
 
 import PcieTypes::*;
+import PcieConfigurator::*;
 import DmaTypes::*;  
 import DmaCompleter::*;
 import DmaRequester::*;
 
-interface DmaController#(numeric type dataWidth);
+interface DmaController;
     // Requester interfaces, where the Card serve as the Master
     interface DmaCardToHostWrite        c2hWrite;
     interface DmaCardToHostRead         c2hRead;
@@ -15,16 +16,14 @@ interface DmaController#(numeric type dataWidth);
     interface DmaHostToCardRead         h2cRead;
 
     // Raw PCIe interfaces, connected to the Xilinx PCIe IP
-    interface RawPcieRequesterRequest   pcieRequesterRequest;
-    interface RawPcieRequesterComplete  pcieRequesterComplete;
-    interface RawPcieCompleterRequest   pcieCompleterRequest;
-    interface RawPcieCompleterComplete  pcieCompleterComplete;
-    interface RawPcieConfiguration      pcieConfiguration;
+    interface RawXilinxPcieIp           rawPcie;
 endinterface
 
+(* synthesize *)
 module mkDmaController(DmaController);
     DmaCompleter completer <- mkDmaCompleter;
     DmaRequester requester <- mkDmaRequester;
+    PcieConfigurator pcieConfigurator <- mkPcieConfigurator;
 
     interface c2hWrite = requester.c2hWrite;
     interface c2hRead  = requester.c2hRead;
@@ -32,9 +31,11 @@ module mkDmaController(DmaController);
     interface h2cWrite = completer.h2cWrite;
     interface h2cRead  = completer.h2cRead;
 
-    interface pcieRequesterRequest  = requester.rawRequesterRequest;
-    interface pcieRequesterComplete = requester.rawRequesterComplete;
-    interface pcieCompleterRequest  = completer.rawCompleterRequest;
-    interface pcieCompleterComplete = completer.rawCompleterComplete;
-
+    interface RawXilinxPcieIp rawPcie;
+        interface requesterRequest  = requester.rawRequesterRequest;
+        interface requesterComplete = requester.rawRequesterComplete;
+        interface completerRequest  = completer.rawCompleterRequest;
+        interface completerComplete = completer.rawCompleterComplete;
+        interface configuration     = pcieConfigurator.rawConfiguration;
+    endinterface
 endmodule

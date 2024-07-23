@@ -8,8 +8,8 @@ OUTPUTDIR ?= output
 LOGFILE ?= run.log
 RUNTOPHASE ?= place # synth place route all
 PARTNAME = xcvu13p-fhgb2104-2-i
-TARGETFILE ?= ../src/StreamUtils.bsv
-TOPMODULE ?= mkStreamConcat
+TARGETFILE ?= ../test/TestDmacVivado.bsv
+TOPMODULE ?= mkTestDmacCsrWrRdLoop
 
 export TOP = $(TOPMODULE)
 export RTL = $(VLOGDIR)

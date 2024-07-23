@@ -143,7 +143,7 @@ typedef Bit#(PCIE_CR_NP_REQ_COUNT_WIDTH)    PcieNonPostedRequstCount;
 // Interface to PCIe IP Completer Interface
 (*always_ready, always_enabled*)
 interface RawPcieCompleterRequest;
-    (* prefix = "s_axis_cq_" *) interface RawPcieAxiStreamSlave#(PCIE_COMPLETER_REQUEST_TUSER_WIDTH) rawAxiStreamSlave;
+    (* prefix = "s_axis_cq" *) interface RawPcieAxiStreamSlave#(PCIE_COMPLETER_REQUEST_TUSER_WIDTH) rawAxiStreamSlave;
     (* result = "pcie_cq_np_req" *) method PcieNonPostedRequst nonPostedReqCreditIncrement;
     (* prefix = "" *) method Action nonPostedReqCreditCnt(
         (* port = "pcie_cq_np_req_count" *) PcieNonPostedRequstCount nonPostedpReqCount );
@@ -151,7 +151,7 @@ endinterface
 
 (*always_ready, always_enabled*)
 interface RawPcieCompleterComplete;
-    (* prefix = "m_axis_cc_" *) interface RawPcieAxiStreamMaster#(PCIE_COMPLETER_COMPLETE_TUSER_WIDTH) rawAxiStreamMaster;
+    (* prefix = "m_axis_cc" *) interface RawPcieAxiStreamMaster#(PCIE_COMPLETER_COMPLETE_TUSER_WIDTH) rawAxiStreamMaster;
 endinterface
 
 typedef 8 PCIE_RQ_TAG_WIDTH;
@@ -161,8 +161,8 @@ typedef PcieTlpCtlSeqNum PcieRqSeqNum;
 // Interface to PCIe IP Requester Interface
 (*always_ready, always_enabled*)
 interface RawPcieRequesterRequest;
-    (* prefix = "m_axis_rq_" *) interface RawPcieAxiStreamMaster#(PCIE_REQUESTER_REQUEST_TUSER_WIDTH)  rawAxiStreamMaster;
-    (* prefix = "pcie_rq_" *) method Action pcieProgressTrack(
+    (* prefix = "m_axis_rq" *) interface RawPcieAxiStreamMaster#(PCIE_REQUESTER_REQUEST_TUSER_WIDTH)  rawAxiStreamMaster;
+    (* prefix = "pcie_rq" *) method Action pcieProgressTrack(
         (* port = "tag_vld0" *)     Bool            tagValid0,
         (* port = "tag_vld1" *)     Bool            tagValid1,
         (* port = "tag0" *)         PcieRqTag       tag0,
@@ -176,7 +176,7 @@ endinterface
 
 (*always_ready, always_enabled*)
 interface RawPcieRequesterComplete;
-    (* prefix = "s_axis_rc_" *) interface RawPcieAxiStreamSlave#(PCIE_REQUESTER_COMPLETE_TUSER_WIDTH)  rawAxiStreamSlave;
+    (* prefix = "s_axis_rc" *) interface RawPcieAxiStreamSlave#(PCIE_REQUESTER_COMPLETE_TUSER_WIDTH)  rawAxiStreamSlave;
 endinterface
 
 // Pcie Configuration Interfaces
@@ -199,10 +199,9 @@ interface RawPcieCfgMgmt;
     (* result = "read" *)                method Bool                 read;
     (* result = "write_data" *)          method PCieCfgMgmtData      writeData;
     (* result = "write" *)               method Bool                 write;
-    (* prefix = "" *)                    method Action               readData(
-        (* port = "read_data" *)  PCieCfgMgmtData cfgMgmtRdData);
-    (* prefix = "" *)                    method Action               rdWrDone(
-        (* port = "read_write_done" *) Bool cfgMgmtRdWrDone);    
+    (* prefix = "" *)                    method Action               getResp(
+        (* port = "read_data" *)            PCieCfgMgmtData cfgMgmtRdData,
+        (* port = "read_write_done" *)      Bool cfgMgmtRdWrDone);
 endinterface
 
 (*always_ready, always_enabled*)
@@ -211,34 +210,188 @@ interface RawPcieCfgPm;
     (* result = "aspm_tx_l0s_entry_disable" *)  method Bool aspmL0EntryDisable;
 endinterface
 
+typedef 4  PCIE_CFG_MSI_ENABLE_WIDTH;
+typedef 32 PCIE_CFG_MSI_INT_WIDTH;
+typedef 8  PCIE_CFG_MSI_FUNC_NUM_WIDTH;
+typedef 12 PCIE_CFG_MSI_MMENABLE_WIDTH;
+typedef 32 PCIE_CFG_MSI_PENDING_STATUS_WIDTH;
+typedef 2  PCIE_CFG_MSI_PENDING_STATUS_FUNC_NUM_WIDTH;
+typedef 2  PCIE_CFG_MSI_SELECT_WIDTH;
+typedef 32 PCIE_CFG_MSI_DATA;
+typedef 3  PCIE_CFG_MSI_ATTR;
+typedef 2  PCIE_CFG_MSI_TPH_TYPE_WIDTH;
+typedef 8  PCIE_CFG_MSI_TPH_ST_TAG_WIDTH;
+
+typedef Bit#(PCIE_CFG_MSI_ENABLE_WIDTH)                     PcieCfgMsiEn;
+typedef Bit#(PCIE_CFG_MSI_INT_WIDTH)                        PcieCfgMsiInt;
+typedef Bit#(PCIE_CFG_MSI_FUNC_NUM_WIDTH)                   PcieCfgMsiFuncNum;
+typedef Bit#(PCIE_CFG_MSI_MMENABLE_WIDTH)                   PcieCfgMsiMmEn;
+typedef Bit#(PCIE_CFG_MSI_PENDING_STATUS_WIDTH)             PcieCfgMsiPendingStatus;
+typedef Bit#(PCIE_CFG_MSI_PENDING_STATUS_FUNC_NUM_WIDTH)    PcieCfgMsiPendingStatusFuncNum;
+typedef Bit#(PCIE_CFG_MSI_SELECT_WIDTH)                     PcieCfgMsiSel;
+typedef Bit#(PCIE_CFG_MSI_DATA)                             PcieCfgMsiData;
+typedef Bit#(PCIE_CFG_MSI_ATTR)                             PcieCfgMsiAttr;
+typedef Bit#(PCIE_CFG_MSI_TPH_TYPE_WIDTH)                   PcieCfgMsiTphType;
+typedef Bit#(PCIE_CFG_MSI_TPH_ST_TAG_WIDTH)                 PcieCfgMsiTphStTag;
+
 (*always_ready, always_enabled*)
 interface RawPcieCfgMsi;
-    
+    (* result = "int" *)                         method PcieCfgMsiInt                   msiInt;
+    (* result = "function_number" *)             method PcieCfgMsiFuncNum               funcNum;
+    (* result = "pending_status" *)              method PcieCfgMsiPendingStatus         pendingStatus;
+    (* result = "pending_status_function_num" *) method PcieCfgMsiPendingStatusFuncNum  pendingStatusFuncNum;
+    (* result = "pending_status_data_enable" *)  method Bool                            pendingStatusDataEn;
+    (* result = "select" *)                      method PcieCfgMsiSel                   sel;
+    (* result = "attr" *)                        method PcieCfgMsiAttr                  attr;
+    (* result = "tph_present" *)                 method Bool                            tphPresent;
+    (* result = "tph_type" *)                    method PcieCfgMsiTphType               tphType;
+    (* result = "tph_st_tag" *)                  method PcieCfgMsiTphStTag              tphStTag;
+    (* prefix = "" *) method Action getMsiSignals(
+        (* port = "enable" *)       Bool            msiEn,
+        (* port = "sent" *)         Bool            msiSent,
+        (* port = "fail" *)         Bool            msiFail,
+        (* port = "mmenable" *)     PcieCfgMsiMmEn  msiMmEn,
+        (* port = "mask_update" *)  Bool            maskUpdate,
+        (* port = "data" *)         PcieCfgMsiData  data
+    );
 endinterface
+
+typedef 4  PCIE_CFG_INTR_INT_WIDTH;
+typedef 4  PCIE_CFG_INTR_PENDING_WIDTH;
+typedef Bit#(PCIE_CFG_INTR_INT_WIDTH) PcieCfgIntrInt;
+typedef Bit#(PCIE_CFG_INTR_PENDING_WIDTH) PcieCfgIntrPending;
 
 (*always_ready, always_enabled*)
 interface RawPcieCfgInterrupt;
-    
+    (* result = "int" *)       method PcieCfgIntrInt        intrInt;
+    (* result = "pending" *)   method PcieCfgIntrPending    intrPending;
+    (* prefix = "" *)          method Action                isIntrSent(
+        (* port = "sent" *)    Bool isSent);
 endinterface
+
+typedef 64 PCIE_CFG_DSN_WIDTH;
+typedef Bit#(PCIE_CFG_DSN_WIDTH) PcieCfgDsn;
+
+typedef 8  PCIE_CFG_DS_BUS_NUM_WIDTH;
+typedef 5  PCIE_CFG_DS_DEVICE_NUM_WIDTH;
+typedef 3  PCIE_CFG_DS_FUNC_NUM_WIDTH;
+typedef 8  PCIE_CFG_DS_PORT_NUM_WIDTH;
+typedef Bit#(PCIE_CFG_DS_BUS_NUM_WIDTH)     PcieCfgDsBusNum;
+typedef Bit#(PCIE_CFG_DS_DEVICE_NUM_WIDTH)  PcieCfgDsDeviceNum;
+typedef Bit#(PCIE_CFG_DS_FUNC_NUM_WIDTH)    PcieCfgDsFuncNum;
+typedef Bit#(PCIE_CFG_DS_PORT_NUM_WIDTH)    PcieCfgDsPortNum;
+
+typedef 4   PCIE_CFG_FLR_DONE_WIDTH;
+typedef 8   PCIE_CFG_VF_FLR_FUNCNUM_WIDTH;
+typedef 4   PCIE_CFG_FLR_INPROC_WIDTH;
+typedef 252 PCIE_CFG_VF_FLR_INPROC_WIDTH;
+typedef Bit#(PCIE_CFG_FLR_DONE_WIDTH)       PcieCfgFlrDone;
+typedef Bit#(PCIE_CFG_VF_FLR_FUNCNUM_WIDTH) PcieCfgVFFlrFuncNum;
+typedef Bit#(PCIE_CFG_FLR_DONE_WIDTH)       PcieCfgFlrInProc;
+typedef Bit#(PCIE_CFG_VF_FLR_INPROC_WIDTH)  PcieCfgVFFlrInProc;
+
+typedef 8  PCIE_CFG_BUS_NUM_WIDTH;
+typedef 16 PCIE_CFG_VEND_ID_WIDTH;
+typedef 16 PCIE_CFG_DEV_ID_WIDTH;
+typedef 8  PCIE_CFG_REV_ID_WIDTH;
+typedef 16 PCIE_CFG_SUBSYS_ID_WIDTH;
+typedef Bit#(PCIE_CFG_BUS_NUM_WIDTH)       PcieCfgBusNum;
+typedef Bit#(PCIE_CFG_VEND_ID_WIDTH)       PcieCfgVendId;
+typedef Bit#(PCIE_CFG_DEV_ID_WIDTH)        PcieCfgDevId;
+typedef Bit#(PCIE_CFG_REV_ID_WIDTH)        PcieCfgRevId;
+typedef Bit#(PCIE_CFG_SUBSYS_ID_WIDTH)     PcieCfgSubsysId;
 
 (*always_ready, always_enabled*)
 interface RawPcieCfgControl;
-    
+    (* result = "hot_reset_out" *)          method Bool                 hotResetOut;
+    (* prefix = "" *)                       method Action               hotResetIn(
+        (* port = "hot_reset_in" *)         Bool hotReset); 
+    (* result = "cofig_space_enable" *)     method Bool                 cfgSpaceEn;
+    (* result = "dsn" *)                    method PcieCfgDsn           deviceSerialNum;
+    (* result = "ds_bus_number" *)          method PcieCfgDsBusNum      downStreamBusNum;
+    (* result = "ds_device_number" *)       method PcieCfgDsDeviceNum   downStreamDeviceNum;
+    (* result = "ds_function_number" *)     method PcieCfgDsFuncNum     downStreamFuncNum;
+    (* result = "power_state_change_ack" *) method Bool                 powerStateChangeAck;
+    (* prefix = "" *)                       method Action               powerStateChangeIntr(
+        (* port = "power_state_change_interrupt" *) Bool powerStateChangeIntrrupt);
+    (* result = "ds_port_number" *)         method PcieCfgDsPortNum     downStreamPortNum;
+    (* result = "err_cor_in" *)             method Bool                 errorCorrectableOut;
+    (* prefix = "" *)                       method Action               getError(
+        (* port = "err_cor_out" *)          Bool errorCorrectable,
+        (* port = "err_fatal_out" *)        Bool errorFatal,
+        (* port = "err_nonfatal_out" *)     Bool errorNonFatal);
+    (* result = "err_uncor_in" *)           method Bool                 errorUncorrectable;
+    (* result = "flr_done" *)               method PcieCfgFlrDone       funcLevelRstDone;
+    (* result = "vf_flr_done" *)            method Bool                 vfFuncLevelRstDone;
+    (* result = "cf_flr_func_num" *)        method PcieCfgVFFlrFuncNum  vfFlrFuncNum;
+    (* prefix = "" *)                       method Action               getInproc(
+        (* port = "flr_in_process" *)       PcieCfgFlrInProc    flrInProcess,
+        (* port = "vf_flr_in_process" *)    PcieCfgVFFlrInProc  vfFlrInProcess);
+    (* result = "req_pm_transition_l23_ready" *) method Bool            reqPmTransL23Ready;
+    (* result = "link_training_enable" *)   method Bool                 linkTrainEn;    
+    (* prefix = "" *)                       method Action               busNumber(
+        (* port = "bus_number" *)           PcieCfgBusNum busNum);
+    (* result = "vend_id" *)                method PcieCfgVendId        vendId;
+    (* result = "subsys_vend_id" *)         method PcieCfgVendId        subsysVendId;
+    (* result = "dev_id_pf0" *)             method PcieCfgDevId         devIdPf0;
+    (* result = "dev_id_pf1" *)             method PcieCfgDevId         devIdPf1;
+    (* result = "dev_id_pf2" *)             method PcieCfgDevId         devIdPf2;
+    (* result = "dev_id_pf3" *)             method PcieCfgDevId         devIdPf3;
+    (* result = "rev_id_pf0" *)             method PcieCfgRevId         revIdPf0;
+    (* result = "rev_id_pf1" *)             method PcieCfgRevId         revIdPf1;
+    (* result = "rev_id_pf2" *)             method PcieCfgRevId         revIdPf2;
+    (* result = "rev_id_pf3" *)             method PcieCfgRevId         revIdPf3;
+    (* result = "subsys_id_pf0" *)          method PcieCfgSubsysId      subsysIdPf0;
+    (* result = "subsys_id_pf1" *)          method PcieCfgSubsysId      subsysIdPf1;
+    (* result = "subsys_id_pf2" *)          method PcieCfgSubsysId      subsysIdPf2;
+    (* result = "subsys_id_pf3" *)          method PcieCfgSubsysId      subsysIdPf3;
 endinterface
+
+typedef 8  PCIE_CFG_FC_HEADER_WIDTH;
+typedef 12 PCIE_CFG_FC_DATA_WIDTH;
+typedef 3  PCIE_CFG_FC_SEL_WIDTH;
+typedef Bit#(PCIE_CFG_FC_HEADER_WIDTH)  PcieCfgFlowControlHeaderCredit;
+typedef Bit#(PCIE_CFG_FC_DATA_WIDTH)    PcieCfgFlowControlDataCredit;
+typedef Bit#(PCIE_CFG_FC_SEL_WIDTH)     PcieCfgFlowControlSel;
 
 (*always_ready, always_enabled*)
 interface RawPcieCfgFC;
-    
+    (* prefix = "" *) method Action flowControl(
+        (* port = "ph" *)   PcieCfgFlowControlHeaderCredit postedHeaderCredit,
+        (* port = "nph" *)  PcieCfgFlowControlHeaderCredit nonPostedHeaderCredit,
+        (* port = "cplh" *) PcieCfgFlowControlHeaderCredit cmplHeaderCredit,
+        (* port = "pd" *)   PcieCfgFlowControlDataCredit postedDataCredit,
+        (* port = "npd" *)  PcieCfgFlowControlDataCredit nonPostedDataCredit,
+        (* port = "cpld" *) PcieCfgFlowControlDataCredit cmplDataCredit
+    );
+    (* result = "fc_sel" *) method PcieCfgFlowControlSel flowControlSel;
 endinterface
 
+typedef 3  PCIE_CFG_MSG_TXTYPE_WIDTH;
+typedef 32 PCIE_CFG_MSG_TXDATA_WIDTH;
+typedef Bit#(PCIE_CFG_MSG_TXTYPE_WIDTH)    PcieCfgMsgTransType;
+typedef Bit#(PCIE_CFG_MSG_TXDATA_WIDTH)    PcieCfgMsgTransData;
 (*always_ready, always_enabled*)
 interface RawPcieCfgMsgTx;
-    
+    (* result = "transmit" *)       method Bool                 msegTransmit;
+    (* result = "transmit_type" *)  method PcieCfgMsgTransType  msegTransmitType;
+    (* result = "transmit_data" *)  method PcieCfgMsgTransData  msegTransmitData;
+    (* prefix = "" *)               method Action               msegTransmitDone(
+        (* port = "transmit_done" *) Bool isDone);   
 endinterface
+
+typedef 8 PCIE_CFG_MSG_RXDATA_WIDTH;
+typedef 5 PCIE_CFG_MSG_RXTYPE_WIDTH;
+typedef Bit#(PCIE_CFG_MSG_RXTYPE_WIDTH)    PcieCfgMsgRecvType;
+typedef Bit#(PCIE_CFG_MSG_RXDATA_WIDTH)    PcieCfgMsgRecvData;
 
 (*always_ready, always_enabled*)
 interface RawPcieCfgMsgRx;
-    
+    method Action receiveMsg(
+        (* port = "received" *)      Bool                isMsgReceived,
+        (* port = "received_data" *) PcieCfgMsgRecvData  recvData,
+        (* port = "received_type" *) PcieCfgMsgRecvType  recvType
+    );
 endinterface
 
 typedef 1 PCIE_CFG_PHY_LINK_DOWN_WIDTH;
@@ -287,7 +440,7 @@ typedef Bit#(PCIE_CFG_OBFF_ENABLE_WIDTH)            PcieCfgObffEn;
 
 (*always_ready, always_enabled*)
 interface RawPcieCfgStatus;
-    method Action getStatus (
+    (* prefix = "" *) method Action getStatus (
         (* port = "phy_link_down" *)        PcieCfgPhyLinkDown       phyLinkDown,
         (* port = "phy_link_status" *)      PcieCfgPhyLinkStatus     phyLinkStatus,
         (* port = "negotiated_width" *)     PcieCfgNegotiatedWidth   negotiatedWidth,
@@ -310,21 +463,37 @@ interface RawPcieCfgStatus;
     );
 endinterface
 
+typedef 4 PCIE_CFG_TFC_NPH_WIDTH;
+typedef 4 PCIE_CFG_TFC_NPD_WIDTH;
+typedef Bit#(PCIE_CFG_TFC_NPH_WIDTH)    PcieCfgTfcNphAv;
+typedef Bit#(PCIE_CFG_TFC_NPD_WIDTH)    PcieCfgTfcNpdAv;
+
 (*always_ready, always_enabled*)
 interface RawPcieCfgTransmitFC;
-    
+    (* prefix = "" *) method Action getTransCredit(
+        (* port = "nph_av" *) PcieCfgTfcNphAv nphAvailable,
+        (* port = "npd_av" *) PcieCfgTfcNpdAv npdAvailable
+    );
 endinterface
 
 interface RawPcieConfiguration;
-    (* prefix = "cfg_mgmt_" *)           interface RawPcieCfgMgmt           mgmt;
-    (* prefix = "cfg_pm_" *)             interface RawPcieCfgPm             pm;
-    (* prefix = "cfg_msi_" *)            interface RawPcieCfgMsi            msi;
-    (* prefix = "cfg_interrupt_" *)      interface RawPcieCfgInterrupt      interrupt;
-    (* prefix = "cfg_" *)                interface RawPcieCfgControl        control;
-    (* prefix = "cfg_fc_" *)             interface RawPcieCfgFC             flowControl;
-    (* prefix = "cfg_msg_transmit_" *)   interface RawPcieCfgMsgTx          msgTx;
-    (* prefix = "cfg_msg_received_" *)   interface RawPcieCfgMsgRx          msgRx;
+    (* prefix = "cfg_mgmt" *)           interface RawPcieCfgMgmt           mgmt;
+    (* prefix = "cfg_pm" *)             interface RawPcieCfgPm             pm;
+    (* prefix = "cfg_msi" *)            interface RawPcieCfgMsi            msi;
+    (* prefix = "cfg_interrupt" *)      interface RawPcieCfgInterrupt      interrupt;
+    (* prefix = "cfg" *)                interface RawPcieCfgControl        control;
+    (* prefix = "cfg_fc" *)             interface RawPcieCfgFC             flowControl;
+    (* prefix = "cfg_msg" *)            interface RawPcieCfgMsgTx          msgTx;
+    (* prefix = "cfg_msg" *)            interface RawPcieCfgMsgRx          msgRx;
     (* prefix = "" *)                    interface RawPcieCfgStatus         status;
-    (* prefix = "pcie_tfc_" *)           interface RawPcieCfgTransmitFC     txFlowControl;
+    (* prefix = "pcie_tfc" *)           interface RawPcieCfgTransmitFC     txFlowControl;
 endinterface
 
+interface RawXilinxPcieIp;
+    // Raw PCIe interfaces, connected to the Xilinx PCIe IP
+    (* prefix = "" *) interface RawPcieRequesterRequest   requesterRequest;
+    (* prefix = "" *) interface RawPcieRequesterComplete  requesterComplete;
+    (* prefix = "" *) interface RawPcieCompleterRequest   completerRequest;
+    (* prefix = "" *) interface RawPcieCompleterComplete  completerComplete;
+    (* prefix = "" *) interface RawPcieConfiguration      configuration;
+endinterface
