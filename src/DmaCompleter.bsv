@@ -37,8 +37,8 @@ typedef struct {
 } CsrReadReq deriving(Bits, Eq, Bounded, FShow);
 
 interface DmaCompleter;
-    interface RawPcieCompleterRequest  rawCompleterRequest;
-    interface RawPcieCompleterComplete rawCompleterComplete;
+    (* prefix = "" *) interface RawPcieCompleterRequest  rawCompleterRequest;
+    (* prefix = "" *) interface RawPcieCompleterComplete rawCompleterComplete;
     interface DmaHostToCardWrite       h2cWrite;
     interface DmaHostToCardRead        h2cRead;
     method DmaCsrValue getRegisterValue(DmaCsrAddr addr);
@@ -58,7 +58,6 @@ endinterface
 
 // PcieCompleter does not support straddle mode now
 // The completer is designed only for CSR Rd/Wr, and will ignore any len>32bit requests 
-(* synthesize *)
 module mkCompleterRequest(CompleterRequest);
     FIFOF#(CmplReqAxiStream)   inFifo    <- mkFIFOF;
     FIFOF#(CsrWriteReq)        wrReqFifo <- mkFIFOF;
@@ -98,6 +97,7 @@ module mkCompleterRequest(CompleterRequest);
         isInPacket <= !axiStream.tLast;
         if (!isInPacket) begin
             let descriptor  = getDescriptorFromFirstBeat(axiStream);
+            // TODO: parity check!
             case (descriptor.reqType) 
                 fromInteger(valueOf(MEM_WRITE_REQ)): begin
                     if (descriptor.dwordCnt == fromInteger(valueOf(IDEA_DWORD_CNT_OF_CSR)) && isFirstBytesAllValid(sideBand)) begin
@@ -132,7 +132,6 @@ module mkCompleterRequest(CompleterRequest);
     interface csrReadReqFifoOut  = convertFifoToFifoOut(rdReqFifo);
 endmodule
 
-(* synthesize *)
 module mkCompleterComplete(CompleterComplete);
     FIFOF#(CmplCmplAxiStream) outFifo    <- mkFIFOF;
     FIFOF#(CsrReadResp)       rdRespFifo <- mkFIFOF;
