@@ -32,8 +32,8 @@ endinstance
 typedef DmaCsrValue CsrReadResp;
 
 typedef struct {
-    DmaCsrAddr rdAddr;
-    PcieCompleterRequestDescriptor npInfo;
+    DmaCsrAddr addr;
+    PcieCompleterRequestDescriptor cqDescriptor;
 } CsrReadReq deriving(Bits, Eq, Bounded, FShow);
 
 interface DmaCompleter;
@@ -90,7 +90,7 @@ module mkCompleterRequest(CompleterRequest);
         return truncate(addr);
     endfunction
 
-    rule parse;
+    rule parseTlp;
         inFifo.deq;
         let axiStream = inFifo.first;
         PcieCompleterRequestSideBandFrame sideBand = unpack(axiStream.tUser);
@@ -117,8 +117,8 @@ module mkCompleterRequest(CompleterRequest);
                 fromInteger(valueOf(MEM_READ_REQ)): begin
                     let rdReqAddr = getCsrAddrFromCqDescriptor(descriptor);
                     let rdReq = CsrReadReq{
-                        rdAddr: rdReqAddr,
-                        npInfo: descriptor
+                        addr: rdReqAddr,
+                        cqDescriptor: descriptor
                     };
                     rdReqFifo.enq(rdReq);
                 end
@@ -137,7 +137,42 @@ module mkCompleterComplete(CompleterComplete);
     FIFOF#(CsrReadResp)       rdRespFifo <- mkFIFOF;
     FIFOF#(CsrReadReq)        rdReqFifo  <- mkFIFOF;
 
-    // TODO: the logic of cc
+    // TODO: the logic of cc, not completed
+    rule genTlp;
+        let value = rdRespFifo.first;
+        rdRespFifo.deq;
+        let cqDescriptor = rdReqFifo.first.cqDescriptor;
+        let addr = rdReqFifo.first.addr;
+        rdReqFifo.deq;
+        let ccDescriptor = PcieCompleterCompleteDescriptor {
+            reserve0        : 0,
+            attributes      : cqDescriptor.attributes,
+            trafficClass    : cqDescriptor.trafficClass,
+            completerIdEn   : False,
+            completerId     : 0,
+            tag             : cqDescriptor.tag,
+            requesterId     : cqDescriptor.requesterId,
+            reserve1        : 0,
+            isPoisoned      : False,
+            status          : 0,
+            dwordCnt        : 0,
+            reserve2        : 0,
+            isLockedReadCmpl: False,
+            byteCnt         : 0,
+            reserve3        : 0,
+            addrType        : 0,
+            lowerAddr       : 0
+        };
+        Data data = zeroExtend(pack(ccDescriptor));
+        data = data | (zeroExtend(value) << valueOf(DES_CC_DESCRIPTOR_WIDTH));
+        let axiStream = CmplCmplAxiStream {
+            tData : data,
+            tKeep : 0,
+            tLast : True,
+            tUser : 0
+        };
+        outFifo.enq(axiStream);
+    endrule
 
     interface axiStreamFifoOut   = convertFifoToFifoOut(outFifo);
     interface csrReadRespFifoIn  = convertFifoToFifoIn(rdRespFifo);
@@ -171,7 +206,7 @@ module mkDmaCompleter(DmaCompleter);
     rule genCsrReadReq;
         let rdReq = cmplRequest.csrReadReqFifoOut.first;
         cmplRequest.csrReadReqFifoOut.deq;
-        h2cCsrReadReqFifo.enq(rdReq.rdAddr);
+        h2cCsrReadReqFifo.enq(rdReq.addr);
         csrRdReqStoreFifo.enq(rdReq);
     endrule
 

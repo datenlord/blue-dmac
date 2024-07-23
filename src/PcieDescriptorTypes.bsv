@@ -53,6 +53,7 @@ typedef struct {
     AddrType        addrType;
 } PcieCompleterRequestDescriptor deriving(Bits, Eq, Bounded, FShow);
 
+typedef 96 DES_CC_DESCRIPTOR_WIDTH;
 typedef 3  DES_CMPL_STATUS_WIDTH;
 typedef 13 DES_CMPL_BYTE_CNT_WIDTH;
 typedef 7  DES_LOWER_ADDR_WIDTH;
