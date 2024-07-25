@@ -245,17 +245,27 @@ interface CounteredFIFOF#(type t);
 endinterface
 
 module mkCounteredFIFOF#(Integer depth)(CounteredFIFOF#(t)) provisos(Bits#(t, tSz));
+    Wire#(Bool) hasDeqCall  <- mkDWire(False);
+    Wire#(Bool) hasEnqCall  <- mkDWire(False);
     Reg#(FifoSize) curSize <- mkReg(0);
     FIFOF#(t) fifo <- mkSizedFIFOF(depth);
 
+    rule updateSize;
+        case({pack(hasEnqCall), pack(hasDeqCall)})
+            2'b10:   curSize <= curSize + 1;
+            2'b01:   curSize <= curSize -1;
+            default: curSize <= curSize;
+        endcase
+    endrule
+
     method Action enq (t x);
         fifo.enq(x);
-        curSize <= curSize + 1;
+        hasEnqCall <= True;
     endmethod
 
     method Action deq;
         fifo.deq;
-        curSize <= curSize - 1;
+        hasDeqCall <= True;
     endmethod
 
     method t first = fifo.first;

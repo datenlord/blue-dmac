@@ -104,10 +104,12 @@ module mkCompleterRequest(CompleterRequest);
             let descriptor  = getDescriptorFromFirstBeat(axiStream);
             case (descriptor.reqType) 
                 fromInteger(valueOf(MEM_WRITE_REQ)): begin
+                    $display("SIM INFO @ mkCompleterRequest: MemWrite Detect!");
                     if (descriptor.dwordCnt == fromInteger(valueOf(IDEA_DWORD_CNT_OF_CSR)) && isFirstBytesAllValid(sideBand)) begin
                         let firstData = getDataFromFirstBeat(axiStream);
                         DmaCsrValue wrValue = firstData[valueOf(DMA_CSR_ADDR_WIDTH)-1:0];
                         DmaCsrAddr wrAddr = getCsrAddrFromCqDescriptor(descriptor);
+                        $display("SIM INFO @ mkCompleterRequest: Valid wrReq with Addr %h, data %h", wrAddr, wrValue);
                         let wrReq = CsrWriteReq {
                             addr    : wrAddr,
                             value   : wrValue
@@ -119,11 +121,13 @@ module mkCompleterRequest(CompleterRequest);
                     end
                 end
                 fromInteger(valueOf(MEM_READ_REQ)): begin
+                    $display("SIM INFO @ mkCompleterRequest: MemRead Detect!");
                     let rdReqAddr = getCsrAddrFromCqDescriptor(descriptor);
                     let rdReq = CsrReadReq{
                         addr: rdReqAddr,
                         cqDescriptor: descriptor
                     };
+                    $display("SIM INFO @ mkCompleterRequest: Valid rdReq with Addr %h", rdReqAddr);
                     rdReqFifo.enq(rdReq);
                 end
                 default: illegalPcieReqCntReg <= illegalPcieReqCntReg + 1;
@@ -148,6 +152,7 @@ module mkCompleterComplete(CompleterComplete);
         let cqDescriptor = rdReqFifo.first.cqDescriptor;
         let addr = rdReqFifo.first.addr;
         rdReqFifo.deq;
+        $display("SIM INFO @ mkCompleterComplete: Valid rdResp with Addr %h, data %h", addr, value);
         let ccDescriptor = PcieCompleterCompleteDescriptor {
             reserve0        : 0,
             attributes      : cqDescriptor.attributes,
@@ -231,6 +236,8 @@ module mkDmaCompleter(DmaCompleter);
     rule procCsrReadResp;
         let req = csrRdReqStoreFifo.first;
         let resp = h2cCsrReadDataFifo.first;
+        csrRdReqStoreFifo.deq;
+        h2cCsrReadDataFifo.deq;
         cmplComplete.csrReadRespFifoIn.enq(resp);
         cmplComplete.csrReadReqFifoIn.enq(req);
     endrule

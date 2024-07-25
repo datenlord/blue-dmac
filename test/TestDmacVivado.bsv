@@ -22,7 +22,7 @@ module mkTestDmacCsrWrRdLoop((* reset="sys_rst" *) Reset sysRst, TestDmacWrRdLoo
         BRAM_Configure {
             memorySize  : valueOf(TEST_BRAM_SIZE),
             loadFormat  : None,
-            latency     : 2,
+            latency     : 1,
             outFIFODepth: 3,
             allowWriteResponseBypass : False
         }
@@ -56,6 +56,7 @@ module mkTestDmacCsrWrRdLoop((* reset="sys_rst" *) Reset sysRst, TestDmacWrRdLoo
     endrule
 
     rule testReadResp;
+        $display("SIM INFO @ mkTestDmacCsrWrRdLoop: h2cRead resp detect!");
         let value <- ram.portB.response.get;
         dmac.h2cRead.dataFifoIn.enq(value);
     endrule
@@ -76,7 +77,7 @@ module mkTestDmacCsrWrRdLoopTb(TestDmacCsrWrRdLoopTb);
         BRAM_Configure {
             memorySize  : valueOf(TEST_BRAM_SIZE),
             loadFormat  : None,
-            latency     : 2,
+            latency     : 1,
             outFIFODepth: 3,
             allowWriteResponseBypass : False
         }

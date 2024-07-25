@@ -99,9 +99,9 @@ function DataBytePtr convertByteEn2BytePtr (ByteEn byteEn);
     return ptr;
 endfunction
 
-function Bool isByteEnZero(ByteEn byteEn) begin
-    return !unpack(remainStream.byteEn[0]);
-end
+function Bool isByteEnZero(ByteEn byteEn);
+    return !unpack(byteEn[0]);
+endfunction
 
 function DataStream getEmptyStream ();
     return DataStream{

@@ -56,10 +56,10 @@ typedef struct {
 typedef 96 DES_CC_DESCRIPTOR_WIDTH;
 typedef 3  DES_CMPL_STATUS_WIDTH;
 typedef 13 DES_CMPL_BYTE_CNT_WIDTH;
-typedef 7  DES_LOWER_ADDR_WIDTH;
+typedef 7  DES_CC_LOWER_ADDR_WIDTH;
 typedef Bit#(DES_CMPL_STATUS_WIDTH)   CmplStatus;
 typedef Bit#(DES_CMPL_BYTE_CNT_WIDTH) CmplByteCnt;
-typedef Bit#(DES_LOWER_ADDR_WIDTH)    LowerAddr;
+typedef Bit#(DES_CC_LOWER_ADDR_WIDTH) CCLowerAddr;
 
 typedef 0 DES_CC_STAUS_SUCCESS;
 typedef 1 DES_CC_STATUS_UPSUPPORT;
@@ -85,8 +85,57 @@ typedef struct {
     CmplByteCnt     byteCnt;
     ReserveBit6     reserve3;
     AddrType        addrType;
-    LowerAddr       lowerAddr;
+    CCLowerAddr     lowerAddr;
 } PcieCompleterCompleteDescriptor deriving(Bits, Eq, Bounded, FShow);
+
+typedef 128 DES_RQ_DESCRIPTOR_WIDTH;
+
+typedef struct {
+    // DW + 3
+    Bool            forceECRC;
+    Attributes      attributes;
+    TrafficClass    trafficClass;
+    Bool            requesterIdEn;
+    BusDeviceFunc   completerId;
+    Tag             tag;
+    // DW + 2
+    BusDeviceFunc   requesterId;
+    Bool            isPoisoned;
+    ReqType         reqType;
+    DwordCount      dwordCnt;
+    // DW + 1 & DW + 0
+    Address         address;
+    AddrType        addrType;
+} PcieRequesterRequestDescriptor deriving(Bits, Eq, Bounded, FShow);
+
+typedef 96 DES_RC_DESCRIPTOR_WIDTH;
+typedef 4  DES_ERROR_CODE_WIDTH;
+typedef 12 DES_RC_LOWER_ADDR_WIDTH;
+
+typedef Bit#(DES_ERROR_CODE_WIDTH)    ErrorCode;
+typedef Bit#(DES_RC_LOWER_ADDR_WIDTH) RCLowerAddr;
+
+typedef struct {
+    // DW + 2
+    ReserveBit1     reserve0;
+    Attributes      attributes;
+    TrafficClass    trafficClass;
+    ReserveBit1     reserve1;
+    BusDeviceFunc   completerId;
+    Tag             tag;
+    // DW + 1
+    BusDeviceFunc   requesterId;
+    ReserveBit1     reserve2;
+    Bool            isPoisoned;
+    CmplStatus      status;
+    DwordCount      dwordCnt;
+    ReserveBit1     reserve3;
+    Bool            isRequestCompleted;
+    Bool            isLockedReadCmpl;
+    CmplByteCnt     byteCnt;
+    ErrorCode       errorcode;
+    RCLowerAddr     lowerAddr;
+} PcieRequesterCompleteDescriptor deriving(Bits, Eq, Bounded, FShow);
 
 // Pcie Tlp types of descriptor
 typedef 4'b0000 MEM_READ_REQ;
