@@ -2,8 +2,9 @@
 import FShow::*;
 import SemiFifo::*;
 import PcieTypes::*;
+import PcieAxiStreamTypes::*;
 
-typedef 512 DATA_WIDTH;
+typedef PCIE_AXIS_DATA_WIDTH DATA_WIDTH;
 typedef 64  DMA_MEM_ADDR_WIDTH;
 
 typedef 32 DMA_CSR_ADDR_WIDTH;
@@ -16,6 +17,10 @@ typedef Bit#(DMA_CSR_DATA_WIDTH) DmaCsrValue;
 typedef 8 BYTE_WIDTH;
 typedef TLog#(BYTE_WIDTH) BYTE_WIDTH_WIDTH;
 typedef TMul#(4, BYTE_WIDTH) DWORD_WIDTH;
+
+typedef Bit#(BYTE_WIDTH) Byte;
+typedef Bit#(DWORD_WIDTH) DWord;
+typedef Bit#(1) ByteParity;
 
 typedef 2 CONCAT_STREAM_NUM;
 

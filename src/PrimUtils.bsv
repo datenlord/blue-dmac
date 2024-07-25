@@ -1,4 +1,5 @@
 import FIFOF::*;
+import Vector::*;
 
 import PcieAxiStreamTypes::*;
 import DmaTypes::*;
@@ -265,3 +266,18 @@ module mkCounteredFIFOF#(Integer depth)(CounteredFIFOF#(t)) provisos(Bits#(t, tS
     method FifoSize getCurSize = curSize;
 endmodule
 
+function ByteParity calByteParity(Byte data);
+    return (data[0] ^ data[1]  ^ data[2] ^ data[3] ^ data[4] ^ data[5] ^ data[6] ^ data[7]);
+endfunction
+
+typedef Bit#(BYTE_EN_WIDTH) DataParity;
+typedef Bit#(TDiv#(DWORD_WIDTH, BYTE_WIDTH)) DwordParity;
+
+function DataParity calDataParity(Data data);
+    Vector#(BYTE_EN_WIDTH, Byte) dataBytes = unpack(data);
+    Vector#(BYTE_EN_WIDTH, ByteParity) dataParities= newVector();
+    for (Integer idx = 0; idx < valueOf(BYTE_EN_WIDTH); idx = idx + 1) begin
+        dataParities[idx] = calByteParity(dataBytes[idx]);
+    end
+    return pack(dataParities);
+endfunction

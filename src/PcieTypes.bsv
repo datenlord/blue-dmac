@@ -501,3 +501,9 @@ interface RawXilinxPcieIp;
     (* prefix = "" *) method Action linkUp(
         (* port = "user_lnk_up" *) Bool isLinkUp);
 endinterface
+
+(* always_ready, always_enabled *)
+interface RawXilinxPcieIpCompleter;
+    (* prefix = "" *) interface RawPcieCompleterRequest   completerRequest;
+    (* prefix = "" *) interface RawPcieCompleterComplete  completerComplete;
+endinterface

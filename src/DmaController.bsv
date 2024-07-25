@@ -41,3 +41,25 @@ module mkDmaController(DmaController);
         endmethod
     endinterface
 endmodule
+
+interface DmaControllerCompleter;
+    // Completer interfaces, where the Card serve as the Slave
+    interface DmaHostToCardWrite        h2cWrite;
+    interface DmaHostToCardRead         h2cRead;
+
+    // Raw PCIe interfaces, connected to the Xilinx PCIe IP
+    interface RawXilinxPcieIpCompleter rawPcie;
+endinterface
+
+// Only for testing in bsv, do not use for synthesize
+module mkDmaControllerCompleter(DmaControllerCompleter);
+    DmaCompleter completer <- mkDmaCompleter;
+
+    interface h2cWrite = completer.h2cWrite;
+    interface h2cRead  = completer.h2cRead;
+
+    interface RawXilinxPcieIpCompleter rawPcie;
+        interface completerRequest  = completer.rawCompleterRequest;
+        interface completerComplete = completer.rawCompleterComplete;
+    endinterface
+endmodule
