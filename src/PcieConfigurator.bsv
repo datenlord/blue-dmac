@@ -146,7 +146,7 @@ module mkPcieConfigurator(PcieConfigurator);
 
         interface RawPcieCfgControl control;
             method Bool hotResetOut;
-                return True;
+                return False;
             endmethod
 
             method Action hotResetIn(Bool hotReset); 

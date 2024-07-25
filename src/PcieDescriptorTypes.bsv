@@ -61,6 +61,10 @@ typedef Bit#(DES_CMPL_STATUS_WIDTH)   CmplStatus;
 typedef Bit#(DES_CMPL_BYTE_CNT_WIDTH) CmplByteCnt;
 typedef Bit#(DES_LOWER_ADDR_WIDTH)    LowerAddr;
 
+typedef 0 DES_CC_STAUS_SUCCESS;
+typedef 1 DES_CC_STATUS_UPSUPPORT;
+typedef 4 DES_CC_STATUS_ABORT; 
+
 typedef struct {
     // DW + 2
     ReserveBit1     reserve0;

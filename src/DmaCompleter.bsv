@@ -1,4 +1,5 @@
 import FIFOF::*;
+import Vector::*;
 
 import SemiFifo::*;
 import PrimUtils::*;
@@ -8,12 +9,16 @@ import PcieDescriptorTypes::*;
 import DmaTypes::*;
 
 typedef 1 IDEA_DWORD_CNT_OF_CSR;
+typedef 4 IDEA_BYTE_CNT_OF_CSR;
 typedef 4 IDEA_FIRST_BE_HIGH_VALID_PTR_OF_CSR;
 
 typedef 64  CMPL_NPREQ_INFLIGHT_NUM;
 typedef 20  CMPL_NPREQ_WAITING_CLKS;
 typedef 2'b11 NP_CREDIT_INCREMENT;
 typedef 2'b00 NP_CREDIT_NOCHANGE;
+
+typedef 'h1F IDEA_CQ_TKEEP_OF_CSR;
+typedef 'hF  IDEA_CC_TKEEP_OF_CSR;
 
 typedef PcieAxiStream#(PCIE_COMPLETER_REQUEST_TUSER_WIDTH)  CmplReqAxiStream;
 typedef PcieAxiStream#(PCIE_COMPLETER_COMPLETE_TUSER_WIDTH) CmplCmplAxiStream;
@@ -87,7 +92,7 @@ module mkCompleterRequest(CompleterRequest);
         else begin
             addr = 0;
         end
-        return truncate(addr);
+        return truncate(addr << valueOf(TSub#(DMA_MEM_ADDR_WIDTH, DES_ADDR_WIDTH)));
     endfunction
 
     rule parseTlp;
@@ -97,7 +102,6 @@ module mkCompleterRequest(CompleterRequest);
         isInPacket <= !axiStream.tLast;
         if (!isInPacket) begin
             let descriptor  = getDescriptorFromFirstBeat(axiStream);
-            // TODO: parity check!
             case (descriptor.reqType) 
                 fromInteger(valueOf(MEM_WRITE_REQ)): begin
                     if (descriptor.dwordCnt == fromInteger(valueOf(IDEA_DWORD_CNT_OF_CSR)) && isFirstBytesAllValid(sideBand)) begin
@@ -122,7 +126,7 @@ module mkCompleterRequest(CompleterRequest);
                     };
                     rdReqFifo.enq(rdReq);
                 end
-                default: begin $display("INFO"); illegalPcieReqCntReg <= illegalPcieReqCntReg + 1; end 
+                default: illegalPcieReqCntReg <= illegalPcieReqCntReg + 1;
             endcase
         end
     endrule
@@ -137,7 +141,7 @@ module mkCompleterComplete(CompleterComplete);
     FIFOF#(CsrReadResp)       rdRespFifo <- mkFIFOF;
     FIFOF#(CsrReadReq)        rdReqFifo  <- mkFIFOF;
 
-    // TODO: the logic of cc, not completed
+    // Only response MemRd TLP in this rule
     rule genTlp;
         let value = rdRespFifo.first;
         rdRespFifo.deq;
@@ -154,22 +158,36 @@ module mkCompleterComplete(CompleterComplete);
             requesterId     : cqDescriptor.requesterId,
             reserve1        : 0,
             isPoisoned      : False,
-            status          : 0,
-            dwordCnt        : 0,
+            status          : fromInteger(valueOf(DES_CC_STAUS_SUCCESS)),
+            dwordCnt        : fromInteger(valueOf(IDEA_DWORD_CNT_OF_CSR)),
             reserve2        : 0,
             isLockedReadCmpl: False,
-            byteCnt         : 0,
+            byteCnt         : fromInteger(valueOf(IDEA_BYTE_CNT_OF_CSR)),
             reserve3        : 0,
-            addrType        : 0,
-            lowerAddr       : 0
+            addrType        : cqDescriptor.addrType,
+            lowerAddr       : truncate(addr)
         };
         Data data = zeroExtend(pack(ccDescriptor));
         data = data | (zeroExtend(value) << valueOf(DES_CC_DESCRIPTOR_WIDTH));
+        let isSop = PcieTlpCtlIsSopCommon {
+            isSopPtrs : replicate(0),  // Straddle mode is disable of completer
+            isSop     : 1 
+        };
+        let isEop = PcieTlpCtlIsEopCommon {
+            isEopPtrs : replicate(0), // Straddle mode is disable of completer
+            isEop     : 1
+        };
+        let sideBand = PcieCompleterCompleteSideBandFrame {
+            parity      : 0,   // Do not enable parity check in the core
+            discontinue : False,
+            isSop       : isSop,
+            isEop       : isEop
+        };
         let axiStream = CmplCmplAxiStream {
             tData : data,
-            tKeep : 0,
+            tKeep : fromInteger(valueOf(IDEA_CC_TKEEP_OF_CSR)),
             tLast : True,
-            tUser : 0
+            tUser : pack(sideBand)
         };
         outFifo.enq(axiStream);
     endrule
