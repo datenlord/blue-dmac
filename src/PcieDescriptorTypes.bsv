@@ -149,3 +149,8 @@ typedef 4'b0111 LOCK_READ_REQ; // allowed only in legacy devices
 typedef 4'b1100 COMMON_MESG;
 typedef 4'b1101 VENDOR_DEF_MESG;
 typedef 4'b1110 ATS_MESG;
+
+// Pcie Addr Types
+typedef 2'b00 UNTRANSLATED_ADDR;
+typedef 2'b01 TRANSLATION_REQ;
+typedef 2'b10 TRANSLATED_ADDR;

@@ -5,6 +5,8 @@ import PcieTypes::*;
 import PcieAxiStreamTypes::*;
 
 typedef PCIE_AXIS_DATA_WIDTH DATA_WIDTH;
+typedef TDiv#(DATA_WIDTH, 2) STRADDLE_THRESH_WIDTH;
+
 typedef 64  DMA_MEM_ADDR_WIDTH;
 
 typedef 32 DMA_CSR_ADDR_WIDTH;
@@ -14,9 +16,8 @@ typedef Bit#(DMA_MEM_ADDR_WIDTH) DmaMemAddr;
 typedef Bit#(DMA_CSR_ADDR_WIDTH) DmaCsrAddr;
 typedef Bit#(DMA_CSR_DATA_WIDTH) DmaCsrValue;
 
-typedef 8 BYTE_WIDTH;
 typedef TLog#(BYTE_WIDTH) BYTE_WIDTH_WIDTH;
-typedef TMul#(4, BYTE_WIDTH) DWORD_WIDTH;
+typedef 2 BYTE_DWORD_SHIFT_WIDTH;
 
 typedef Bit#(BYTE_WIDTH) Byte;
 typedef Bit#(DWORD_WIDTH) DWord;
@@ -24,12 +25,19 @@ typedef Bit#(1) ByteParity;
 
 typedef 2 CONCAT_STREAM_NUM;
 
-typedef TDiv#(DATA_WIDTH, BYTE_WIDTH) BYTE_EN_WIDTH;
+typedef TDiv#(DATA_WIDTH, BYTE_WIDTH)  BYTE_EN_WIDTH;
+typedef TDiv#(DATA_WIDTH, DWORD_WIDTH) DWORD_EN_WIDTH;
 
 typedef Bit#(DATA_WIDTH) Data;
 typedef Bit#(BYTE_EN_WIDTH) ByteEn;
-typedef Bit#(TAdd#(1, TLog#(DATA_WIDTH))) DataBitPtr;
-typedef Bit#(TAdd#(1, TLog#(BYTE_EN_WIDTH))) DataBytePtr;
+typedef Bit#(DWORD_BYTES) DWordByteEn;
+
+typedef Bit#(TAdd#(1, TLog#(DATA_WIDTH)))     DataBitPtr;
+typedef Bit#(TAdd#(1, TLog#(BYTE_EN_WIDTH)))  DataBytePtr;
+typedef Bit#(TAdd#(1, TLog#(DWORD_EN_WIDTH))) DataDwordPtr;
+
+typedef Bit#(TAdd#(1, TLog#(DWORD_BYTES)))    DWordBytePtr;
+typedef Bit#(BYTE_DWORD_SHIFT_WIDTH)          ByteModDWord;
 
 typedef struct {
     DmaMemAddr startAddr;

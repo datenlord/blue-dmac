@@ -37,8 +37,6 @@ interface RequesterComplete;
 endinterface
 
 module mkRequesterRequest(RequesterRequest);
-    StreamConcat streamConcat <- mkStreamConcat;
-
     FIFOF#(DataStream) wrDataInFifo <- mkFIFOF;
     FIFOF#(DmaRequest) wrReqInFifo  <- mkFIFOF;
     FIFOF#(DmaRequest) rdReqInFifo  <- mkFIFOF;
@@ -49,39 +47,32 @@ module mkRequesterRequest(RequesterRequest);
     Wire#(Bool) postedEnWire    <- mkDWire(False);
     Wire#(Bool) nonPostedEnWire <- mkDWire(True);
 
-    function DataStream genRQDescriptorStream(DmaRequest req, Bool isWrite);
-        let descriptor = PcieRequesterRequestDescriptor {
-            forceECRC       : False,
-            attributes      : 0,
-            trafficClass    : 0,
-            requesterIdEn   : False,
-            completerId     : 0,
-            tag             : 0,
-            requesterId     : 0,
-            isPoisoned      : False,
-            reqType         : isWrite ? fromInteger(valueOf(MEM_WRITE_REQ)) : fromInteger(valueOf(MEM_READ_REQ)),
-            dwordCnt        : truncate(req.length >> 2 + (req.length[0] | req.length[1])),
-            address         : truncate(req.startAddr >> 2),
-            addrType        : 2'b10
-        };
-        ByteEn byteEn = 1;
-        let stream = DataStream {
-            data    : zeroExtend(pack(descriptor)),
-            byteEn  : (byteEn << (valueOf(TDiv#(DES_RQ_DESCRIPTOR_WIDTH, BYTE_WIDTH)) + 1)) - 1,
-            isFirst : True,
-            isLast  : False
-        };
-        return stream;
-    endfunction
+    ChunkSplit chunkSplit <- mkChunkSplit;
+    AlignedDescGen rqDescGenarator <- mkAlignedRqDescGen;
 
-    // TODO: RQ Logic
-    rule recvWriteReq if (postedEnWire);
-        if (!isInWritingReg) begin
-            let wrReq  = wrReqInFifo.first;
-            let wrData = wrDataInFifo.first;
+    // Pipeline stage 1: split the whole write request to chunks, latency = 3
+    rule recvWriting if (postedEnWire);
+        if (wrReqInFifo.notEmpty && chunkSplit.dataFifoIn.notFull) begin
             wrReqInFifo.deq;
+            chunkSplit.reqFifoIn.enq(wrReqInFifo.first);
+        end
+        if (wrDataInFifo.notEmpty && chunkSplit.reqFifoIn.notFull) begin
             wrDataInFifo.deq;
-            isInWritingReg <= (wrReq.length > fromInteger(valueOf(ONE_TLP_THRESH)));
+            chunkSplit.dataFifoIn.enq(wrDataInFifo.first);
+        end
+    endrule
+
+    // Pipeline stage 2: generate the RQ descriptor, which may be with 0~3 Byte invalid data for DW alignment, latency = 2
+    rule addDescriptor;
+        if (chunkSplit.chunkReqFifoOut.notEmpty) begin
+            let chunkReq = chunkSplit.chunkReqFifoOut.first;
+            chunkSplit.chunkReqFifoOut.deq;
+            rqDescGenarator.reqFifoIn.enq(chunkReq);
+        end
+        if (chunkSplit.chunkDataFifoOut.notEmpty) begin
+            let chunkDataStream = chunkSplit.chunkDataFifoOut.first;
+            chunkSplit.chunkDataFifoOut.deq;
+            descriptorConcat.inputStreamSecondFifoIn.enq(chunkDataStream);
         end
     endrule
 

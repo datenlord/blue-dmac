@@ -8,7 +8,8 @@ import PcieTypes::*;
 import PcieDescriptorTypes::*;
 import DmaTypes::*;
 
-typedef 1 IDEA_DWORD_CNT_OF_CSR;
+typedef 1 IDEA_CQ_CSR_DWORD_CNT;
+typedef 2 IDEA_CC_CSR_DWORD_CNT;
 typedef 4 IDEA_BYTE_CNT_OF_CSR;
 typedef 4 IDEA_FIRST_BE_HIGH_VALID_PTR_OF_CSR;
 
@@ -105,7 +106,7 @@ module mkCompleterRequest(CompleterRequest);
             case (descriptor.reqType) 
                 fromInteger(valueOf(MEM_WRITE_REQ)): begin
                     $display("SIM INFO @ mkCompleterRequest: MemWrite Detect!");
-                    if (descriptor.dwordCnt == fromInteger(valueOf(IDEA_DWORD_CNT_OF_CSR)) && isFirstBytesAllValid(sideBand)) begin
+                    if (descriptor.dwordCnt == fromInteger(valueOf(IDEA_CQ_CSR_DWORD_CNT)) && isFirstBytesAllValid(sideBand)) begin
                         let firstData = getDataFromFirstBeat(axiStream);
                         DmaCsrValue wrValue = firstData[valueOf(DMA_CSR_ADDR_WIDTH)-1:0];
                         DmaCsrAddr wrAddr = getCsrAddrFromCqDescriptor(descriptor);
@@ -164,7 +165,7 @@ module mkCompleterComplete(CompleterComplete);
             reserve1        : 0,
             isPoisoned      : False,
             status          : fromInteger(valueOf(DES_CC_STAUS_SUCCESS)),
-            dwordCnt        : fromInteger(valueOf(IDEA_DWORD_CNT_OF_CSR)),
+            dwordCnt        : fromInteger(valueOf(IDEA_CC_CSR_DWORD_CNT)),
             reserve2        : 0,
             isLockedReadCmpl: False,
             byteCnt         : fromInteger(valueOf(IDEA_BYTE_CNT_OF_CSR)),
