@@ -160,6 +160,7 @@ module mkStreamConcatTb(Empty);
             );
         end
         dut.outputStreamFifoOut.deq;
+        dut.outputBytePtrFifoOut.deq;
     endrule
 
     rule testFinish;

@@ -6,8 +6,10 @@ import BusConversion :: *;
 import SemiFifo :: *;
 
 typedef 8 BYTE_WIDTH;
-typedef TMul#(2, BYTE_WIDTH) WORD_WIDTH;
-typedef TMul#(4, BYTE_WIDTH) DWORD_WIDTH;
+typedef 2 WORD_BYTES;
+typedef 4 DWORD_BYTES;
+typedef TMul#(WORD_BYTES, BYTE_WIDTH)  WORD_WIDTH;
+typedef TMul#(DWORD_BYTES, BYTE_WIDTH) DWORD_WIDTH;
 
 typedef 512 PCIE_AXIS_DATA_WIDTH;
 typedef TDiv#(PCIE_AXIS_DATA_WIDTH, DWORD_WIDTH) PCIE_AXIS_KEEP_WIDTH;

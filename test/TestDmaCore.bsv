@@ -13,7 +13,6 @@ typedef 2'b00 DEFAULT_TLP_SIZE_SETTING;
 typedef 4   CHUNK_TX_TEST_SETTING_NUM;
 typedef 6   CHUNK_RX_TEST_SETTING_NUM;
 
-(* doc = "testcase" *) 
 module mkChunkComputerTb(Empty);
 
     ChunkCompute dut <- mkChunkComputer(DMA_TX);
@@ -88,6 +87,32 @@ module mkChunkComputerTb(Empty);
                 end
             end
         end
+    endrule
+
+endmodule
+
+typedef 'hABCD311 SIMPLE_TEST_ADDR ;
+typedef 'h1111    SIMPLE_TEST_LEN  ;
+
+(* doc = "testcase" *) 
+module mkSimpleTestAlignedRqDescGen(Empty);
+    AlignedDescGen dut <- mkAlignedRqDescGen;
+
+    Reg#(Bool) isInitReg <- mkReg(False);
+
+    rule testInit if (!isInitReg);
+        isInitReg <= True;
+        dut.reqFifoIn.enq(DmaRequest {
+            startAddr: fromInteger(valueOf(SIMPLE_TEST_ADDR)),
+            length   : fromInteger(valueOf(SIMPLE_TEST_LEN))
+        });
+    endrule
+
+    rule testOutput if (isInitReg);
+        let stream = dut.dataFifoOut.first;
+        stream.deq;
+        $display(fshow(stream));
+        $finish();
     endrule
 
 endmodule
