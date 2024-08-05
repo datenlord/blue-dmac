@@ -6,6 +6,7 @@ import SemiFifo::*;
 import PcieTypes::*;
 import DmaTypes::*;
 import PcieAxiStreamTypes::*;
+import PrimUtils::*;
 import StreamUtils::*;
 import PcieDescriptorTypes::*;
 
@@ -25,7 +26,7 @@ typedef Bit#(PCIE_TLP_SIZE_SETTING_WIDTH)   PcieTlpSizeSetting;
 typedef TAdd#(1, TLog#(TDiv#(BUS_BOUNDARY, BYTE_EN_WIDTH))) DATA_BEATS_WIDTH;
 typedef Bit#(DATA_BEATS_WIDTH)                              DataBeats;
 
-typedef PcieAxiStream#(PCIE_REQUESTER_REQUEST_TUSER_WIDTH)  RqAxisStream;
+typedef PcieAxiStream#(PCIE_REQUESTER_REQUEST_TUSER_WIDTH)  RqAxiStream;
 
 typedef Tuple2#(
     DWordByteEn,
@@ -56,7 +57,7 @@ interface ConvertDataStreamsToStraddleAxis;
     interface FifoIn#(SideBandByteEn)   byteEnAFifoIn;
     interface FifoIn#(DataStream)       dataBFifoIn;
     interface FifoIn#(SideBandByteEn)   byteEnBFifoIn;
-    interface FifoOut#(PcieAxiStream)   axiStreamFifoOut;
+    interface FifoOut#(RqAxiStream)     axiStreamFifoOut;
 endinterface
 
 module mkChunkComputer (TRXDirection direction, ChunkCompute ifc);
@@ -155,13 +156,13 @@ endmodule
 //  - Only the first and the last chunk can be shorter than MaxPayloadSize
 //  - Other chunks length must equal to MaxPayloadSize
 //  - The module may block the pipeline if one input beat is splited to two beats
-module mkChunkSplit(TRXDirection direction, ChunkCompute ifc);
+module mkChunkSplit(TRXDirection direction, ChunkSplit ifc);
     FIFOF#(DataStream)  dataInFifo       <- mkFIFOF;
     FIFOF#(DmaRequest)  reqInFifo        <- mkFIFOF;
     FIFOF#(DataStream)  chunkOutFifo     <- mkFIFOF;
     FIFOF#(DmaRequest)  reqOutFifo       <- mkFIFOF;
-    FIFOF#(DmaRequest)  firstReqPipeFifo <- mkSizedFIFOF(STREAM_SPLIT_LATENCY);
-    FIFOF#(DmaRequest)  inputReqPipeFifo <- mkSizedFIFOF(STREAM_SPLIT_LATENCY);
+    FIFOF#(DmaRequest)  firstReqPipeFifo <- mkSizedFIFOF(valueOf(STREAM_SPLIT_LATENCY));
+    FIFOF#(DmaRequest)  inputReqPipeFifo <- mkSizedFIFOF(valueOf(STREAM_SPLIT_LATENCY));
 
     StreamSplit firstChunkSplitor <- mkStreamSplit;
 
@@ -305,15 +306,15 @@ typedef 3 BYTEEN_INFIFO_DEPTH;
 // - The core use isSop and isEop to location Tlp and allow 2 Tlp in one beat
 // - The input dataStream should be added Descriptor and aligned to DW already
 module mkConvertDataStreamsToStraddleAxis(ConvertDataStreamsToStraddleAxis);
-    FIFOF#(DataStream)       dataAInFifo <- mkFIFOF;
-    FIFOF#(SideBandByteEn)   byteEnAFifo <- mkSizedFIFOF(BYTEEN_INFIFO_DEPTH);
-    FIFOF#(DataStream)       dataBInFifo <- mkFIFOF;
-    FIFOF#(SideBandByteEn)   byteEnBFifo <- mkSizedFIFOF(BYTEEN_INFIFO_DEPTH);
+    FIFOF#(DataStream)       dataInAFifo <- mkFIFOF;
+    FIFOF#(SideBandByteEn)   byteEnAFifo <- mkSizedFIFOF(valueOf(BYTEEN_INFIFO_DEPTH));
+    FIFOF#(DataStream)       dataInBFifo <- mkFIFOF;
+    FIFOF#(SideBandByteEn)   byteEnBFifo <- mkSizedFIFOF(valueOf(BYTEEN_INFIFO_DEPTH));
 
-    FIFOF#(DataBytePtr) dataPrepareAFifo <- mkFIFOF;
-    FIFOF#(DataBytePtr) dataPrepareBFifo <- mkFIFOF;
+    FIFOF#(DataBytePtr) dataShiftAFifo <- mkFIFOF;
+    FIFOF#(DataBytePtr) dataShiftBFifo <- mkFIFOF;
 
-    FIFOF#(PcieAxiStream) axiStreamOutFifo <- mkFIFOF;
+    FIFOF#(RqAxiStream) axiStreamOutFifo <- mkFIFOF;
 
     Reg#(StreamWithPtr)  remainStreamAWpReg <- mkRegU;
     Reg#(StreamWithPtr)  remainStreamBWpReg <- mkRegU;
@@ -361,24 +362,6 @@ module mkConvertDataStreamsToStraddleAxis(ConvertDataStreamsToStraddleAxis);
 
     // Pipeline stage 1: get the byte pointer of each stream
     rule prepareBytePtr;
-        if (dataInAFifo.notEmpty && dataPrepareAFifo.notFull) begin
-            let stream = dataInAFifo.first;
-            dataInAFifo.deq;
-            let bytePtr = convertByteEn2BytePtr(stream.byteEn);
-            dataPrepareAFifo.enq(StreamWithPtr {
-                stream : stream,
-                bytePtr: bytePtr
-            });
-        end
-        if (dataInBFifo.notEmpty && dataPrepareBFifo.notFull) begin
-            let stream = dataInBFifo.first;
-            dataInAFifo.deq;
-            let bytePtr = convertByteEn2BytePtr(stream.byteEn);
-            dataPrepareBFifo.enq(StreamWithPtr {
-                stream : stream,
-                bytePtr: bytePtr
-            });
-        end
     endrule
 
     // Pipeline Stage 2: concat the stream with its remain data (if exist)
@@ -394,108 +377,16 @@ module mkConvertDataStreamsToStraddleAxis(ConvertDataStreamsToStraddleAxis);
             isEopPtrs  : replicate(0),
             isEop      : 0
         };
-    // This cycle isInStreamA, only transfer StreamA or StreamA + StreamB
-        if (isInStreamAReg) begin
-        // First: get the whole streamA data to transfer to the PCIe bus in this cycle
-            if (hasStreamARemainReg && hasLastStreamARemainReg) begin
-                straddleWpA = remainStreamAWpReg;
-                isInStreamAReg <= False;
-                hasStreamARemainReg <= False;
-            end
-            else if (hasStreamARemainReg) begin
-                let {concatStreamWpA, remainStreamWpA} = getConcatStream(remainStreamAWpReg, dataPrepareAFifo.first);
-                dataPrepareAFifo.deq;
-                if (isByteEnZero(remainStreamWpA.stream.byteEn)) begin
-                    isInStreamAReg <= False;
-                    hasStreamARemainReg <= False;
-                end 
-                else begin
-                    isInStreamAReg <= True;
-                    hasStreamARemainReg <= True;
-                end
-                straddleWpA = concatStreamWpA;
-                remainStreamAWpReg <= remainStreamWpA;
-                hasLastStreamARemainReg <= dataPrepareAFifo.first.stream.isLast;
-            end
-            else begin
-                straddleWpA = dataPrepareAFifo.first;
-                dataPrepareAFifo.deq;
-            end
-            if (dataPrepareBFifo.notEmpty) begin
-                straddleWpB = dataPrepareBFifo.first;
-            end
-        // Second: generate straddle data
-            straddleData = straddleWpA.stream.data;
-            if (straddleWpA.stream.isLast) begin
-                isEop.isEop = fromInteger(valueOf(SINGLE_TLP_IN_THIS_BEAT));
-                isEop.isEopPtrs[0] = convertByteEn2DwordPtr(straddleWpA.stream.byteEn);
-            end
-            // only can contains straddleA
-            if (straddleWpA.bytePtr > fromInteger(valueOf(STRADDLE_THRESH_WIDTH))) begin
-                
-            end
-            // transfer straddleA and straddleB at the same time
-            else begin
-                if (straddleWpB.bytePtr > 0) begin
-
-                end
-                else begin
-
-                end
-            end
-        end
-        // This cycle isInStreamB, only transfer StreamB or StreamB + StreamA
-        else if (isInStreamBReg) begin
-            // get the whole streamB data to transfer to the PCIe bus in this cycle
-            if (hasStreamBRemainReg && hasLastStreamBRemainReg) begin
-                straddleWpB = remainStreamBWpReg;
-                isInStreamBReg <= False;
-                hasStreamBRemainReg <= False;
-            end
-            else if (hasStreamBRemainReg) begin
-                dataPrepareBFifo.deq;
-                let {concatStreamWpB, remainStreamWpB} = getConcatStream(remainStreamBWpReg, dataPrepareBFifo.first);
-                if (isByteEnZero(remainStreamWpB.stream.byteEn)) begin
-                    isInStreamBReg <= False;
-                    hasStreamBRemainReg <= False;
-                end 
-                else begin
-                    isInStreamBReg <= True;
-                    hasStreamBRemainReg <= True;
-                end
-                straddleWpB = concatStreamWpB;
-                remainStreamBWpReg <= remainStreamWpB;
-                hasLastStreamBRemainReg <= dataPrepareBFifo.first.stream.isLast;
-            end
-            else begin
-                straddleWpB = dataPrepareBFifo.first;
-                dataPrepareBFifo.deq;
-            end
-            if (dataPrepareAFifo.notEmpty) begin
-                straddleWpA = dataPrepareAFifo.first;
-            end
-        end
-        // This cycle is idle
-        else begin
-            if (dataPrepareAFifo.notEmpty) begin
-                straddleWpA = dataPrepareAFifo.first;
-                dataPrepareAFifo.deq;
-            end
-            if (dataPrepareBFifo.notEmpty) begin
-                straddleWpB = dataPrepareBFifo.first;
-                dataPrepareBFifo.deq;
-            end
-        end
 
     endrule
 
 
 
-    interface dataAFifoIn = convertFifoToFifoIn(dataInAFifo);
-    interface reqAFifoIn  = convertFifoToFifoIn(reqInAFifo);
-    interface dataBFifoIn = convertFifoToFifoIn(dataInBFifo);
-    interface reqBFifoIn  = convertFifoToFifoIn(reqInBFifo);
-
+    interface dataAFifoIn      = convertFifoToFifoIn(dataInAFifo);
+    interface byteEnAFifoIn    = convertFifoToFifoIn(byteEnAFifo);
+    interface dataBFifoIn      = convertFifoToFifoIn(dataInBFifo);
+    interface byteEnBFifoIn    = convertFifoToFifoIn(byteEnBFifo);
+    interface axiStreamFifoOut = convertFifoToFifoOut(axiStreamOutFifo);
 endmodule
 
 interface AlignedDescGen;
@@ -523,7 +414,7 @@ module mkAlignedRqDescGen(Bool isWrite, AlignedDescGen ifc);
 
     function DwordCount getDWordCount(DmaMemAddr startAddr, DmaMemAddr endAddr);
         let endOffset = byteModDWord(endAddr); 
-        DwordCount dwCnt = (endAddr >> valueOf(BYTE_DWORD_SHIFT_WIDTH)) - (startAddr >> valueOf(BYTE_DWORD_SHIFT_WIDTH));
+        DwordCount dwCnt = truncate((endAddr >> valueOf(BYTE_DWORD_SHIFT_WIDTH)) - (startAddr >> valueOf(BYTE_DWORD_SHIFT_WIDTH)));
         return (endOffset == 0) ? dwCnt : dwCnt + 1;
     endfunction
 
@@ -536,7 +427,7 @@ module mkAlignedRqDescGen(Bool isWrite, AlignedDescGen ifc);
             "Request Check @ mkAlignedRqDescGen",
             fshow(request)
         );
-        DmaMemAddr   endAddress   = request.startAddr + length - 1;
+        DmaMemAddr   endAddress   = request.startAddr + request.length - 1;
         // firstOffset values from {0, 1, 2, 3}
         ByteModDWord firstOffset  = byteModDWord(request.startAddr);
         ByteModDWord lastOffset   = byteModDWord(endAddress);
@@ -553,7 +444,7 @@ module mkAlignedRqDescGen(Bool isWrite, AlignedDescGen ifc);
 
     // Pipeline Stage 2: generate Descriptor and the dataStream
     rule genDescriptor;
-        let {request, firstBytePtr, lastBytePtr, bytePtr, endAddress} = pipelineFifo.first;
+        let {request, firstOffset, lastOffset, bytePtr, endAddress} = pipelineFifo.first;
         pipelineFifo.deq;
         let firstByteEn = convertDWordOffset2FirstByteEn(firstOffset);
         let lastByteEn  = convertDWordOffset2LastByteEn(lastOffset);

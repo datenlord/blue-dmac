@@ -67,7 +67,7 @@ instance FShow#(DataStream);
         return ($format("<DataStream      \n",
             "     data    = %h\n", stream.data, 
             "     byteEn  = %b\n", stream.byteEn,
-            "     isFirst = ", fshow(stream.isFirst), ", isLast = ", fshow(stream.isLast)
+            "     isFirst = %b", pack(stream.isFirst), ", isLast = %b", pack(stream.isLast)
         ));
     endfunction
 endinstance

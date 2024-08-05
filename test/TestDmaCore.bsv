@@ -94,9 +94,8 @@ endmodule
 typedef 'hABCD311 SIMPLE_TEST_ADDR ;
 typedef 'h1111    SIMPLE_TEST_LEN  ;
 
-(* doc = "testcase" *) 
 module mkSimpleTestAlignedRqDescGen(Empty);
-    AlignedDescGen dut <- mkAlignedRqDescGen;
+    AlignedDescGen dut <- mkAlignedRqDescGen(True);
 
     Reg#(Bool) isInitReg <- mkReg(False);
 
@@ -110,7 +109,7 @@ module mkSimpleTestAlignedRqDescGen(Empty);
 
     rule testOutput if (isInitReg);
         let stream = dut.dataFifoOut.first;
-        stream.deq;
+        dut.dataFifoOut.deq;
         $display(fshow(stream));
         $finish();
     endrule
