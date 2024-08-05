@@ -48,7 +48,11 @@ module mkRequesterRequest(RequesterRequest);
     Wire#(Bool) nonPostedEnWire <- mkDWire(True);
 
     ChunkSplit chunkSplit <- mkChunkSplit;
-    AlignedDescGen rqDescGenarator <- mkAlignedRqDescGen;
+    
+    StreamShift shift0 <- mkStreamShift(valueOf(TDiv#(DES_RQ_DESCRIPTOR_WIDTH, BYTE_WIDTH)));
+    StreamShift shift1 <- mkStreamShift(valueOf(TAdd#(1, TDiv#(DES_RQ_DESCRIPTOR_WIDTH, BYTE_WIDTH))));
+    StreamShift shift2 <- mkStreamShift(valueOf(TADD#(2, TDiv#(DES_RQ_DESCRIPTOR_WIDTH, BYTE_WIDTH))));
+    StreamShift shift3 <- mkStreamShift(valueOf(TAdd#(3, TDiv#(DES_RQ_DESCRIPTOR_WIDTH, BYTE_WIDTH))));
 
     // Pipeline stage 1: split the whole write request to chunks, latency = 3
     rule recvWriting if (postedEnWire);
