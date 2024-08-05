@@ -5,7 +5,6 @@ import PcieTypes::*;
 import PcieAxiStreamTypes::*;
 
 typedef PCIE_AXIS_DATA_WIDTH DATA_WIDTH;
-typedef TDiv#(DATA_WIDTH, 2) STRADDLE_THRESH_WIDTH;
 
 typedef 64  DMA_MEM_ADDR_WIDTH;
 
@@ -38,6 +37,10 @@ typedef Bit#(TAdd#(1, TLog#(DWORD_EN_WIDTH))) DataDwordPtr;
 
 typedef Bit#(TAdd#(1, TLog#(DWORD_BYTES)))    DWordBytePtr;
 typedef Bit#(BYTE_DWORD_SHIFT_WIDTH)          ByteModDWord;
+
+typedef TDiv#(DATA_WIDTH, 2) STRADDLE_THRESH_BIT_WIDTH;
+typedef TDiv#(BYTE_EN_WIDTH, 2) STRADDLE_THRESH_BYTE_WIDTH;
+typedef TDiv#(DWORD_EN_WIDTH, 2) STRADDLE_THRESH_DWORD_WIDTH;
 
 typedef struct {
     DmaMemAddr startAddr;
