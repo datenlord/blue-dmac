@@ -2,9 +2,15 @@ import GetPut::*;
 import Randomizable::*;
 
 import SemiFifo::*;
-import PrimUtils::*;
+import PcieAxiStreamTypes::*;
 import DmaTypes::*;
-import DmaRequestCore::*;
+import PrimUtils::*;
+import PcieTypes::*;
+import PcieDescriptorTypes::*;
+import StreamUtils::*;
+import ReqRequestCore::*;
+import DmaRequester::*;
+import TestStreamUtils::*;
 
 typedef 100000 CHUNK_PER_EPOCH_TEST_NUM;
 typedef 64'hFFFFFFFFFFFFFFFF MAX_ADDRESS;
@@ -91,27 +97,76 @@ module mkChunkComputerTb(Empty);
 
 endmodule
 
-typedef 'hABCD311 SIMPLE_TEST_ADDR ;
-typedef 'h1111    SIMPLE_TEST_LEN  ;
+typedef 60 SIMPLE_TEST_BYTELEN;
+typedef 'hABCDEF SIMPLE_TEST_ADDR;
 
-module mkSimpleTestAlignedRqDescGen(Empty);
-    AlignedDescGen dut <- mkAlignedRqDescGen(True);
+module mkSimpleRequesterRequestCoreTb(Empty);
+    RequesterRequestCore dut <- mkRequesterRequestCore;
+    Reg#(UInt#(32)) testCntReg <- mkReg(0);
 
-    Reg#(Bool) isInitReg <- mkReg(False);
-
-    rule testInit if (!isInitReg);
-        isInitReg <= True;
-        dut.reqFifoIn.enq(DmaRequest {
-            startAddr: fromInteger(valueOf(SIMPLE_TEST_ADDR)),
-            length   : fromInteger(valueOf(SIMPLE_TEST_LEN))
-        });
+    rule testInput if (testCntReg < 1);
+        let req = DmaRequest {
+            startAddr : fromInteger(valueOf(SIMPLE_TEST_ADDR)),
+            length    : fromInteger(valueOf(SIMPLE_TEST_BYTELEN))
+        };
+        dut.wrReqFifoIn.enq(req);
+        let stream = generatePsuedoStream(fromInteger(valueOf(SIMPLE_TEST_BYTELEN)), True, True);
+        dut.dataFifoIn.enq(stream);
+        testCntReg <= testCntReg + 1;
     endrule
 
-    rule testOutput if (isInitReg);
+    rule testOutput;
         let stream = dut.dataFifoOut.first;
         dut.dataFifoOut.deq;
         $display(fshow(stream));
-        $finish();
+        if (stream.isFirst) begin
+            let {firstByteEn, lastByteEn} = dut.byteEnFifoOut.first;
+            dut.byteEnFifoOut.deq;
+            $display("firstByteEn:%b, lastByteEn:%b", firstByteEn, lastByteEn);
+            PcieRequesterRequestDescriptor desc = unpack(truncate(stream.data));
+            $display("Descriptor Elements: dwordCnt:%d, address:%h", desc.dwordCnt, desc.address << 2);
+        end
+        if (stream.isLast) begin
+            $finish();
+        end
+    endrule
+endmodule
+
+module mkSimpleRequesterRequestTb(Empty);
+    RequesterRequest dut <- mkRequesterRequest;
+    Reg#(UInt#(32)) testCntReg <- mkReg(0);
+    Reg#(UInt#(32)) tlpNumReg  <- mkReg(2);
+
+    rule testInput if (testCntReg < 1);
+        let req = DmaRequest {
+            startAddr : fromInteger(valueOf(SIMPLE_TEST_ADDR)),
+            length    : fromInteger(valueOf(SIMPLE_TEST_BYTELEN))
+        };
+        dut.reqA.wrReqFifoIn.enq(req);
+        dut.reqB.wrReqFifoIn.enq(req);
+        let stream = generatePsuedoStream(fromInteger(valueOf(SIMPLE_TEST_BYTELEN)), True, True);
+        dut.reqA.wrDataFifoIn.enq(stream);
+        dut.reqB.wrDataFifoIn.enq(stream);
+        testCntReg <= testCntReg + 1;
+    endrule
+
+    rule testOutput;
+        let stream = dut.axiStreamFifoOut.first;
+        dut.axiStreamFifoOut.deq;
+        $display("data: %h", stream.tData);
+        PcieRequesterRequestSideBandFrame sideBand = unpack(stream.tUser);
+        $display("isSop : ", sideBand.isSop.isSop, ", isEop : ", sideBand.isEop.isEop);
+        let tlpNum = tlpNumReg;
+        if (sideBand.isEop.isEop == fromInteger(valueOf(SINGLE_TLP_IN_THIS_BEAT))) begin
+                tlpNum = tlpNum - 1;
+        end
+        else if (sideBand.isEop.isEop == fromInteger(valueOf(DOUBLE_TLP_IN_THIS_BEAT))) begin
+                tlpNum = tlpNum - 2;
+        end
+        if (tlpNum == 0) begin
+            $finish();
+        end
+        tlpNumReg <= tlpNum;
     endrule
 
 endmodule

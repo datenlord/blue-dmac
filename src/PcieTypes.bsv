@@ -17,6 +17,10 @@ typedef 81  PCIE_COMPLETER_COMPLETE_TUSER_WIDTH;
 typedef 137 PCIE_REQUESTER_REQUEST_TUSER_WIDTH;
 typedef 161 PCIE_REQUESTER_COMPLETE_TUSER_WIDTH;
 
+typedef PcieAxiStream#(PCIE_COMPLETER_REQUEST_TUSER_WIDTH)  CmplReqAxiStream;
+typedef PcieAxiStream#(PCIE_COMPLETER_COMPLETE_TUSER_WIDTH) CmplCmplAxiStream;
+typedef PcieAxiStream#(PCIE_REQUESTER_REQUEST_TUSER_WIDTH)  ReqReqAxiStream;
+typedef PcieAxiStream#(PCIE_REQUESTER_COMPLETE_TUSER_WIDTH) ReqCmplAxiStream;
 
 // PcieTlpCtl**: SideBand Signals delivered in tUser defined by PG213
 typedef 8  PCIE_TLP_FIRST_BE_WIDTH;
@@ -122,7 +126,7 @@ typedef struct {
     PcieTlpCtlAddrOffset            addrOffset;
     PcieTlpCtlLastByteEn            lastByteEn;
     PcieTlpCtlFirstByteEn           firstByteEn;
-} PcieRequsterRequestSideBandFrame deriving(Bits, Bounded, Eq);
+} PcieRequesterRequestSideBandFrame deriving(Bits, Bounded, Eq);
 
 // 161bit tUser of PcieRequesterComplete AXIS-slave
 typedef struct {

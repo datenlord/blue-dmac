@@ -5,6 +5,7 @@ import SemiFifo::*;
 
 import PrimUtils::*;
 import DmaTypes::*;
+import PcieAxiStreamTypes::*;
 
 typedef 32 STREAM_SIZE_WIDTH;
 typedef UInt#(STREAM_SIZE_WIDTH) StreamSize;
@@ -272,7 +273,7 @@ module mkStreamSplit(StreamSplit ifc);
         DataBytePtr offsetBytePtr = 0;
         let curLocation = unpack(zeroExtend(bytePtr)) + streamByteCntReg;
         if (!isSplittedReg && curLocation >= splitLocation) begin
-            offsetBytePtr = truncate(pack(splitLocation - streamByteCntReg));
+            offsetBytePtr = truncate(pack(splitLocation - curLocation));
         end
         splitPtrFifo.enq(offsetBytePtr);
         if (offsetBytePtr > 0 && !stream.isLast) begin
@@ -302,6 +303,8 @@ module mkStreamSplit(StreamSplit ifc);
             // split location not in this beat, do nothing
             if (!hasRemainReg && offsetBytePtr == 0) begin
                 outputFifo.enq(streamWp.stream);
+                hasRemainReg     <= False;
+                hasLastRemainReg <= False;
             end
             // split the frame in this cycle to a isLast=True frame and a remain frame
             else if (!hasRemainReg && offsetBytePtr > 0) begin
@@ -467,23 +470,61 @@ module mkStreamShiftComplex#(DataBytePtr offset)(StreamShiftComplex);
     interface streamFifoOut = convertFifoToFifoOut(outFifo);
 endmodule
 
-interface StreamAlignToDw;
-    interface FifoIn#(DataStream)  dataFifoIn;
-    interface FifoIn#(DmaRequest)  reqFifoIn;
-    interface FifoOut#(DataStream) dataFifoOut;
-    interface FifoOut#(SideBandByteEn) byteEnFifoOut;
+interface StreamShiftAlignToDw;
+    interface FifoIn#(DataStream)        dataFifoIn;
+    interface FifoIn#(DmaExtendRequest)  reqFifoIn;
+    interface FifoOut#(DataStream)       dataFifoOut;
+    interface FifoOut#(SideBandByteEn)   byteEnFifoOut;
 endinterface
 
-module mkStreamAlignToDw(StreamAlignToDw);
-    FIFOF#(DataStream)  dataInFifo       <- mkFIFOF;
-    FIFOF#(DataStream)  reqInFifo        <- mkFIFOF;
-    FIFOF#(DataStream)  dataOutFifo      <- mkFIFOF;
-    FIFOF#(SideBandByteEn) byteEnOutFifo <- mkFIFOF;
+typedef 2 STREAM_ALIGN_DW_LATENCY;
 
+module mkStreamShiftAlignToDw#(DataBytePtr offset)(StreamShiftAlignToDw);
+    FIFOF#(DataStream)       dataInFifo     <- mkFIFOF;
+    FIFOF#(DmaExtendRequest) reqInFifo      <- mkFIFOF;
+    FIFOF#(DataStream)       dataOutFifo    <- mkFIFOF;
+    FIFOF#(SideBandByteEn)   byteEnOutFifo  <- mkFIFOF;
 
+    FIFOF#(DataBytePtr)      shiftSetFifo   <- mkSizedFIFOF(valueOf(TMul#(2, STREAM_SHIFT_LATENCY)));
+
+    Vector#(DWORD_BYTES, StreamShift) shifts = newVector;
+    for (DataBytePtr idx = 0; idx < fromInteger(valueOf(DWORD_BYTES)); idx = idx + 1 ) begin
+        shifts[idx] <- mkStreamShift(offset + idx);
+    end
+
+    rule getOffset;
+        let exReq = reqInFifo.first;
+        reqInFifo.deq;
+        ByteModDWord startAddrOffset = byteModDWord(exReq.startAddr);
+        shiftSetFifo.enq(zeroExtend(startAddrOffset));
+        ByteModDWord endAddrOffset = byteModDWord(exReq.endAddr);
+        let firstByteEn = convertDWordOffset2FirstByteEn(startAddrOffset);
+        let lastByteEn  = convertDWordOffset2LastByteEn(endAddrOffset);
+        byteEnOutFifo.enq(tuple2(firstByteEn, lastByteEn));
+        let stream = dataInFifo.first;
+        dataInFifo.deq;
+        for (DataBytePtr idx = 0; idx < fromInteger(valueOf(DWORD_BYTES)); idx = idx + 1 ) begin
+            shifts[idx].streamFifoIn.enq(stream);
+        end
+    endrule
+
+    rule getShiftData;
+        DataStream stream = getEmptyStream;
+        let offset = shiftSetFifo.first;
+        for (DataBytePtr idx = 0; idx < fromInteger(valueOf(DWORD_BYTES)); idx = idx + 1 ) begin
+            shifts[idx].streamFifoOut.deq;
+            if (idx == offset) begin
+                stream = shifts[idx].streamFifoOut.first;
+            end
+        end
+        if (stream.isLast) begin
+            shiftSetFifo.deq;
+        end
+        dataOutFifo.enq(stream);
+    endrule
 
     interface dataFifoIn    = convertFifoToFifoIn(dataInFifo);
     interface reqFifoIn     = convertFifoToFifoIn(reqInFifo);
-    interface dataOutFifo   = convertFifoToFifoOut(dataOutFifo);
-    interface byteEnOutFifo = convertFifoToFifoOut(byteEnOutFifo);
+    interface dataFifoOut   = convertFifoToFifoOut(dataOutFifo);
+    interface byteEnFifoOut = convertFifoToFifoOut(byteEnOutFifo);
 endmodule
