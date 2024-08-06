@@ -21,9 +21,6 @@ typedef 2'b00 NP_CREDIT_NOCHANGE;
 typedef 'h1F IDEA_CQ_TKEEP_OF_CSR;
 typedef 'hF  IDEA_CC_TKEEP_OF_CSR;
 
-typedef PcieAxiStream#(PCIE_COMPLETER_REQUEST_TUSER_WIDTH)  CmplReqAxiStream;
-typedef PcieAxiStream#(PCIE_COMPLETER_COMPLETE_TUSER_WIDTH) CmplCmplAxiStream;
-
 typedef struct {
     DmaCsrAddr  addr;
     DmaCsrValue value;

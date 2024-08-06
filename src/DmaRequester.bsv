@@ -6,12 +6,10 @@ import StreamUtils::*;
 import PcieTypes::*;
 import PcieAxiStreamTypes::*;
 import PcieDescriptorTypes::*;
+import ReqRequestCore::*;
 import DmaTypes::*;
 
 typedef TSub#(DATA_WIDTH, DES_RQ_DESCRIPTOR_WIDTH) ONE_TLP_THRESH;
-
-typedef PcieAxiStream#(PCIE_REQUESTER_REQUEST_TUSER_WIDTH)  ReqReqAxiStream;
-typedef PcieAxiStream#(PCIE_REQUESTER_COMPLETE_TUSER_WIDTH) ReqCmplAxiStream;
 
 interface DmaRequester;
     interface DmaCardToHostWrite        c2hWrite;
@@ -20,10 +18,17 @@ interface DmaRequester;
     (* prefix = "" *) interface RawPcieRequesterComplete  rawRequesterComplete;
 endinterface
 
-interface RequesterRequest;
+typedef 2 STRADDLE_NUM;
+
+interface DmaRequesterRequestFifoIn;
     interface FifoIn#(DataStream) wrDataFifoIn;
     interface FifoIn#(DmaRequest) wrReqFifoIn;
     interface FifoIn#(DmaRequest) rdReqFifoIn;
+endinterface
+
+interface RequesterRequest;
+    interface DmaRequesterRequestFifoIn reqA;
+    interface DmaRequesterRequestFifoIn reqB;
     interface FifoOut#(ReqReqAxiStream) axiStreamFifoOut;
     interface Put#(Bool) postedEn;
     interface Put#(Bool) nonPostedEn;
@@ -37,53 +42,63 @@ interface RequesterComplete;
 endinterface
 
 module mkRequesterRequest(RequesterRequest);
-    FIFOF#(DataStream) wrDataInFifo <- mkFIFOF;
-    FIFOF#(DmaRequest) wrReqInFifo  <- mkFIFOF;
-    FIFOF#(DmaRequest) rdReqInFifo  <- mkFIFOF;
+    RequesterRequestCore rqACore <- mkRequesterRequestCore;
+    RequesterRequestCore rqBCore <- mkRequesterRequestCore;
     FIFOF#(ReqReqAxiStream) axiStreamOutFifo <- mkFIFOF;
-
+    
     Reg#(DmaMemAddr) inflightRemainBytesReg <- mkReg(0);
     Reg#(Bool)  isInWritingReg  <- mkReg(False);
-    Wire#(Bool) postedEnWire    <- mkDWire(False);
+    Wire#(Bool) postedEnWire    <- mkDWire(True);
     Wire#(Bool) nonPostedEnWire <- mkDWire(True);
 
-    ChunkSplit chunkSplit <- mkChunkSplit;
-    
-    StreamShift shift0 <- mkStreamShift(valueOf(TDiv#(DES_RQ_DESCRIPTOR_WIDTH, BYTE_WIDTH)));
-    StreamShift shift1 <- mkStreamShift(valueOf(TAdd#(1, TDiv#(DES_RQ_DESCRIPTOR_WIDTH, BYTE_WIDTH))));
-    StreamShift shift2 <- mkStreamShift(valueOf(TADD#(2, TDiv#(DES_RQ_DESCRIPTOR_WIDTH, BYTE_WIDTH))));
-    StreamShift shift3 <- mkStreamShift(valueOf(TAdd#(3, TDiv#(DES_RQ_DESCRIPTOR_WIDTH, BYTE_WIDTH))));
+    ConvertDataStreamsToStraddleAxis straddleAxis <- mkConvertDataStreamsToStraddleAxis;
 
-    // Pipeline stage 1: split the whole write request to chunks, latency = 3
-    rule recvWriting if (postedEnWire);
-        if (wrReqInFifo.notEmpty && chunkSplit.dataFifoIn.notFull) begin
-            wrReqInFifo.deq;
-            chunkSplit.reqFifoIn.enq(wrReqInFifo.first);
+    // Pipeline stage 1: split to chunks, align to DWord and add descriptor at the first
+    // See RequesterRequestCore
+
+    // Pipeline stage 2: put 2 core output datastream to straddleAxis and generate ReqReqAxiStream
+    rule coreToStraddle;
+        if (rqACore.dataFifoOut.notEmpty) begin
+            let stream = rqACore.dataFifoOut.first;
+            if (stream.isFirst && rqACore.byteEnFifoOut.notEmpty) begin
+                let sideBandByteEn = rqACore.byteEnFifoOut.first;
+                straddleAxis.byteEnAFifoIn.enq(sideBandByteEn);
+                rqACore.dataFifoOut.deq;
+                straddleAxis.dataAFifoIn.enq(stream);
+            end
+            else begin
+                rqACore.dataFifoOut.deq;
+                straddleAxis.dataAFifoIn.enq(stream);
+            end
         end
-        if (wrDataInFifo.notEmpty && chunkSplit.reqFifoIn.notFull) begin
-            wrDataInFifo.deq;
-            chunkSplit.dataFifoIn.enq(wrDataInFifo.first);
+        if (rqBCore.dataFifoOut.notEmpty) begin
+            let stream = rqBCore.dataFifoOut.first;
+            if (stream.isFirst && rqBCore.byteEnFifoOut.notEmpty) begin
+                let sideBandByteEn = rqBCore.byteEnFifoOut.first;
+                straddleAxis.byteEnBFifoIn.enq(sideBandByteEn);
+                rqBCore.dataFifoOut.deq;
+                straddleAxis.dataBFifoIn.enq(stream);
+            end
+            else begin
+                rqBCore.dataFifoOut.deq;
+                straddleAxis.dataBFifoIn.enq(stream);
+            end
         end
     endrule
 
-    // Pipeline stage 2: generate the RQ descriptor, which may be with 0~3 Byte invalid data for DW alignment, latency = 2
-    rule addDescriptor;
-        if (chunkSplit.chunkReqFifoOut.notEmpty) begin
-            let chunkReq = chunkSplit.chunkReqFifoOut.first;
-            chunkSplit.chunkReqFifoOut.deq;
-            rqDescGenarator.reqFifoIn.enq(chunkReq);
-        end
-        if (chunkSplit.chunkDataFifoOut.notEmpty) begin
-            let chunkDataStream = chunkSplit.chunkDataFifoOut.first;
-            chunkSplit.chunkDataFifoOut.deq;
-            descriptorConcat.inputStreamSecondFifoIn.enq(chunkDataStream);
-        end
-    endrule
+    interface DmaRequesterRequestFifoIn reqA;
+        interface wrDataFifoIn = rqACore.dataFifoIn;
+        interface wrReqFifoIn  = rqACore.wrReqFifoIn;
+        interface rdReqFifoIn  = rqACore.rdReqFifoIn;
+    endinterface
 
-    interface wrDataFifoIn = convertFifoToFifoIn(wrDataInFifo);
-    interface wrReqFifoIn  = convertFifoToFifoIn(wrReqInFifo);
-    interface rdReqFifoIn  = convertFifoToFifoIn(rdReqInFifo);
-    interface axiStreamFifoOut = convertFifoToFifoOut(axiStreamOutFifo);
+    interface DmaRequesterRequestFifoIn reqB;
+        interface wrDataFifoIn = rqBCore.dataFifoIn;
+        interface wrReqFifoIn  = rqBCore.wrReqFifoIn;
+        interface rdReqFifoIn  = rqBCore.rdReqFifoIn;
+    endinterface
+
+    interface axiStreamFifoOut = straddleAxis.axiStreamFifoOut;
 
     interface Put postedEn;
         method Action put(Bool postedEnable);

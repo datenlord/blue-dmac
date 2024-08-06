@@ -47,6 +47,12 @@ typedef struct {
     DmaMemAddr length;
 } DmaRequest deriving(Bits, Bounded, Eq);
 
+typedef struct {
+    DmaMemAddr startAddr;
+    DmaMemAddr endAddr;
+    DmaMemAddr length;
+} DmaExtendRequest deriving(Bits, Bounded, Eq);
+
 typedef enum {
     DMA_RX, 
     DMA_TX
@@ -58,6 +64,11 @@ typedef struct {
     Bool isFirst;
     Bool isLast;
 } DataStream deriving(Bits, Bounded, Eq);
+
+typedef Tuple2#(
+    DWordByteEn,
+    DWordByteEn
+) SideBandByteEn;
 
 instance FShow#(DmaRequest);
     function Fmt fshow(DmaRequest request);
