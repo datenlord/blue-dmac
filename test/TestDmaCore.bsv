@@ -1,5 +1,6 @@
 import GetPut::*;
 import Randomizable::*;
+import Vector::*;
 
 import SemiFifo::*;
 import PcieAxiStreamTypes::*;
@@ -11,6 +12,7 @@ import StreamUtils::*;
 import ReqRequestCore::*;
 import DmaRequester::*;
 import TestStreamUtils::*;
+import ReqCompleterCore::*;
 
 typedef 100000 CHUNK_PER_EPOCH_TEST_NUM;
 typedef 64'hFFFFFFFFFFFFFFFF MAX_ADDRESS;
@@ -170,3 +172,82 @@ module mkSimpleRequesterRequestTb(Empty);
     endrule
 
 endmodule
+
+module mkSimpleConvertStraddleAxisToDataStreamTb(Empty);
+    ConvertStraddleAxisToDataStream dut <- mkConvertStraddleToDataStream;
+    Reg#(UInt#(32)) testCntReg <- mkReg(0);
+    Reg#(UInt#(32)) tlpNumReg  <- mkReg(2);
+
+    CmplByteCnt testLength = 20;
+    DmaMemAddr startAddr = fromInteger(valueOf(SIMPLE_TEST_ADDR));
+
+    rule testInput if (testCntReg < 1);
+        let desc0 = PcieRequesterCompleteDescriptor {
+            reserve0            : 0,
+            attributes          : 0,
+            trafficClass        : 0,
+            reserve1            : 0,
+            completerId         : 123,
+            tag                 : 'b01100,
+            requesterId         : 0,
+            reserve2            : 0,
+            isPoisoned          : False,
+            status              : fromInteger(valueOf(SUCCESSFUL_CMPL)),
+            dwordCnt            : 1,
+            reserve3            : 0,
+            isRequestCompleted  : True,
+            isLockedReadCmpl    : False,
+            byteCnt             : testLength,
+            errorcode           : 0,
+            lowerAddr           : truncate(startAddr)
+        };
+        let desc1 = desc0;
+        desc1.lowerAddr = desc0.lowerAddr + truncate(testLength);
+        desc1.tag = 'b10001;
+        let stream = generatePsuedoStream(unpack(zeroExtend(testLength)), True, True);
+        let isSop = PcieTlpCtlIsSopReqCpl {
+            isSop       :  fromInteger(valueOf(DOUBLE_TLP_IN_THIS_BEAT)),
+            isSopPtrs   : replicate(0)
+        };
+        isSop.isSopPtrs[0] = fromInteger(valueOf(ISSOP_LANE_0));
+        isSop.isSopPtrs[1] = fromInteger(valueOf(ISSOP_LANE_32));
+        let isEop = PcieTlpCtlIsEopReqCpl {
+            isEop       : fromInteger(valueOf(DOUBLE_TLP_IN_THIS_BEAT)),
+            isEopPtrs   : replicate(0)
+        };
+        let data0 = stream.data << valueOf(DES_RC_DESCRIPTOR_WIDTH) | zeroExtend(pack(desc0));
+        let data1 = stream.data << valueOf(DES_RC_DESCRIPTOR_WIDTH) | zeroExtend(pack(desc1));
+        let byteEn = stream.byteEn << valueOf(TDiv#(DES_RC_DESCRIPTOR_WIDTH, BYTE_WIDTH));
+        let sideBand = PcieRequesterCompleteSideBandFrame {
+            parity : 0,
+            discontinue : False,
+            isEop  : isEop,
+            isSop  : isSop,
+            dataByteEn : byteEn | byteEn << valueOf(STRADDLE_THRESH_BYTE_WIDTH)
+        }; 
+        
+        let axiStream = ReqCmplAxiStream {
+            tData :  data0 | data1 << valueOf(STRADDLE_THRESH_BIT_WIDTH),
+            tKeep : -1,
+            tLast : True,
+            tUser : pack(sideBand)
+        };
+        dut.axiStreamFifoIn.enq(axiStream);
+        testCntReg <= testCntReg + 1;
+    endrule
+
+    rule testOutput;
+        for (Integer pathIdx = 0; pathIdx < valueOf(DMA_PATH_NUM); pathIdx = pathIdx + 1) begin
+            if (dut.dataFifoOut[pathIdx].notEmpty) begin
+                let stream = dut.dataFifoOut[pathIdx].first;
+                dut.dataFifoOut[pathIdx].deq;
+                $display(fshow(stream));
+            end
+        end
+    endrule
+
+endmodule
+
+
+
+

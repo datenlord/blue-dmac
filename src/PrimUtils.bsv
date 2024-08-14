@@ -190,6 +190,18 @@ function DWordByteEn convertDWordOffset2LastByteEn (ByteModDWord dwOffset);
     return dwByteEn;
 endfunction
 
+function Data selectDataByByteMask (Data data, ByteEn byteEn);
+    Data result = 0;
+    for (Integer byteIdx = 0; byteIdx < valueOf(BYTE_EN_WIDTH); byteIdx = byteIdx + 1) begin
+        let bitIdxLo = byteIdx * valueOf(BYTE_WIDTH);
+        let bitIdxHi = (byteIdx + 1) * valueOf(BYTE_WIDTH) - 1;
+        if (byteEn[byteIdx] == 1'b1) begin
+           result[bitIdxHi:bitIdxLo] = Byte'(data[bitIdxHi:bitIdxLo]);
+        end
+    end
+    return result;
+endfunction
+
 // DWordPtr strarts from 0 not 1 to align to PcieTlpIsEop
 function DataDwordPtr convertByteEn2DwordPtr (ByteEn byteEn);
     DataDwordPtr ptr = 0;

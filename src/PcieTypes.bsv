@@ -89,6 +89,14 @@ typedef struct {
     PcieTlpCtlIsEopRC               isEop;
 } PcieTlpCtlIsEopReqCpl deriving(Bits, Bounded, Eq);
 
+// Only support at most 2 TLP straddle mode on RQ&RC
+typedef 2'b00 NO_TLP_IN_THIS_BEAT;
+typedef 2'b01 SINGLE_TLP_IN_THIS_BEAT;
+typedef 2'b11 DOUBLE_TLP_IN_THIS_BEAT;
+
+typedef 2'b00 ISSOP_LANE_0;
+typedef 2'b10 ISSOP_LANE_32;
+
 // 183bit tUser of PcieCompleterRequeste AXIS-slave
 typedef struct {
     PcieTlpCtlParity                parity;

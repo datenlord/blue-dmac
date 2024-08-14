@@ -10,10 +10,6 @@ import PrimUtils::*;
 import StreamUtils::*;
 import PcieDescriptorTypes::*;
 
-
-typedef 4096                                BUS_BOUNDARY;
-typedef TAdd#(1, TLog#(BUS_BOUNDARY))       BUS_BOUNDARY_WIDTH;
-
 typedef Bit#(BUS_BOUNDARY_WIDTH)            PcieTlpMaxMaxPayloadSize;
 typedef Bit#(TLog#(BUS_BOUNDARY_WIDTH))     PcieTlpSizeWidth;
 
@@ -280,233 +276,7 @@ module mkChunkSplit(TRXDirection direction, ChunkSplit ifc);
     endinterface
 endmodule
 
-typedef 2'b00 NO_TLP_IN_THIS_BEAT;
-typedef 2'b01 SINGLE_TLP_IN_THIS_BEAT;
-typedef 2'b11 DOUBLE_TLP_IN_THIS_BEAT;
-
-typedef 2'b00 ISSOP_LANE_0;
-typedef 2'b10 ISSOP_LANE_32;
-
 typedef 3 BYTEEN_INFIFO_DEPTH;
-
-// Convert 2 DataStream input to 1 PcieAxiStream output
-// - The axistream is in straddle mode which means tKeep and tLast are ignored
-// - The core use isSop and isEop to location Tlp and allow 2 Tlp in one beat
-// - The input dataStream should be added Descriptor and aligned to DW already
-interface ConvertDataStreamsToStraddleAxis;
-    interface FifoIn#(DataStream)       dataAFifoIn;
-    interface FifoIn#(SideBandByteEn)   byteEnAFifoIn;
-    interface FifoIn#(DataStream)       dataBFifoIn;
-    interface FifoIn#(SideBandByteEn)   byteEnBFifoIn;
-    interface FifoOut#(ReqReqAxiStream) axiStreamFifoOut;
-endinterface
-
-module mkConvertDataStreamsToStraddleAxis(ConvertDataStreamsToStraddleAxis);
-    FIFOF#(SideBandByteEn)   byteEnAFifo <- mkSizedFIFOF(valueOf(BYTEEN_INFIFO_DEPTH));
-    FIFOF#(SideBandByteEn)   byteEnBFifo <- mkSizedFIFOF(valueOf(BYTEEN_INFIFO_DEPTH));
-
-    StreamShiftComplex shiftA <- mkStreamShiftComplex(fromInteger(valueOf(STRADDLE_THRESH_BYTE_WIDTH)));
-    StreamShiftComplex shiftB <- mkStreamShiftComplex(fromInteger(valueOf(STRADDLE_THRESH_BYTE_WIDTH)));
-
-    FIFOF#(ReqReqAxiStream) axiStreamOutFifo <- mkFIFOF;
-
-    Reg#(Bool) isInStreamAReg <- mkReg(False);
-    Reg#(Bool) isInStreamBReg <- mkReg(False);
-    Reg#(Bool) isInShiftAReg <- mkReg(False);
-    Reg#(Bool) isInShiftBReg <- mkReg(False);
-    Reg#(Bool) roundRobinReg <- mkReg(False);
-
-    function Bool hasStraddleSpace(DataStream sdStream);
-        return !unpack(sdStream.byteEn[valueOf(STRADDLE_THRESH_BYTE_WIDTH)]);
-    endfunction
-
-    function PcieRequesterRequestSideBandFrame genRQSideBand(
-        PcieTlpCtlIsEopCommon isEop, PcieTlpCtlIsSopCommon isSop, SideBandByteEn byteEnA, SideBandByteEn byteEnB
-        );
-        let {firstByteEnA, lastByteEnA} = byteEnA;
-        let {firstByteEnB, lastByteEnB} = byteEnB;
-        let sideBand = PcieRequesterRequestSideBandFrame {
-            // Do not use parity check in the core
-            parity              : 0,
-            // Do not support progress track
-            seqNum1             : 0,
-            seqNum0             : 0,
-            //TODO: Do not support Transaction Processing Hint now, maybe we need TPH for better performance
-            tphSteeringTag      : 0,
-            tphIndirectTagEn    : 0,
-            tphType             : 0,
-            tphPresent          : 0,
-            // Do not support discontinue
-            discontinue         : False,
-            // Indicates end of the tlp
-            isEop               : isEop,
-            // Indicates starts of a new tlp
-            isSop               : isSop,
-            // Disable when use DWord-aligned Mode
-            addrOffset          : 0,
-            // Indicates byte enable in the first/last DWord
-            lastByteEn          : {pack(lastByteEnB), pack(lastByteEnA)},
-            firstByteEn         : {pack(firstByteEnB), pack(firstByteEnA)}
-        };
-        return sideBand;
-    endfunction
-
-    // Pipeline stage 1: get the shift datastream
-
-    // Pipeline Stage 2: get the axiStream data
-    rule genStraddlePcie;
-        DataStream sendingStream = getEmptyStream;
-        DataStream pendingStream = getEmptyStream;
-        Bool isSendingA = True;
-
-        // In streamA sending epoch, waiting streamA until isLast
-        if (isInStreamAReg) begin
-            let {oriStreamA, shiftStreamA} = shiftA.streamFifoOut.first;
-            sendingStream = isInShiftAReg ? shiftStreamA : oriStreamA;
-            shiftA.streamFifoOut.deq;
-            isSendingA = True;
-            if (shiftB.streamFifoOut.notEmpty && sendingStream.isLast && hasStraddleSpace(sendingStream)) begin
-                let {oriStreamB, shiftStreamB} = shiftB.streamFifoOut.first;
-                pendingStream = shiftStreamB;
-                shiftB.streamFifoOut.deq;
-            end
-        end
-        // In streamB sendging epoch, waiting streamB until isLast
-        else if (isInStreamBReg) begin
-            let {oriStreamB, shiftStreamB} = shiftB.streamFifoOut.first;
-            sendingStream = isInShiftBReg ? shiftStreamB : oriStreamB;
-            shiftB.streamFifoOut.deq;
-            isSendingA = False;
-            if (shiftA.streamFifoOut.notEmpty && sendingStream.isLast && hasStraddleSpace(sendingStream)) begin
-                let {oriStreamA, shiftStreamA} = shiftA.streamFifoOut.first;
-                pendingStream = shiftStreamA;
-                shiftA.streamFifoOut.deq;
-            end
-        end
-        // In Idle, choose one stream to enter new epoch
-        else begin
-            if (shiftA.streamFifoOut.notEmpty && shiftB.streamFifoOut.notEmpty) begin
-                roundRobinReg <= !roundRobinReg;
-                if (roundRobinReg) begin
-                    let {oriStreamA, shiftStreamA} = shiftA.streamFifoOut.first;
-                    sendingStream = oriStreamA;
-                    shiftA.streamFifoOut.deq;
-                    isSendingA = True;
-                    if (sendingStream.isLast && hasStraddleSpace(sendingStream)) begin
-                        let {oriStreamB, shiftStreamB} = shiftB.streamFifoOut.first;
-                        pendingStream = shiftStreamB;
-                        shiftB.streamFifoOut.deq;
-                    end
-                end
-                else begin
-                    let {oriStreamB, shiftStreamB} = shiftB.streamFifoOut.first;
-                    sendingStream = oriStreamB;
-                    shiftB.streamFifoOut.deq;
-                    isSendingA = False;
-                    if (sendingStream.isLast && hasStraddleSpace(sendingStream)) begin
-                        let {oriStreamA, shiftStreamA} = shiftA.streamFifoOut.first;
-                        pendingStream = shiftStreamA;
-                        shiftA.streamFifoOut.deq;
-                    end
-                end
-            end
-            else if (shiftA.streamFifoOut.notEmpty) begin
-                let {oriStreamA, shiftStreamA} = shiftA.streamFifoOut.first;
-                sendingStream = oriStreamA;
-                shiftA.streamFifoOut.deq;
-                isSendingA = True;
-                roundRobinReg  <= False;
-            end
-            else if (shiftB.streamFifoOut.notEmpty) begin 
-                let {oriStreamB, shiftStreamB} = shiftB.streamFifoOut.first;
-                sendingStream = oriStreamB;
-                shiftB.streamFifoOut.deq;
-                isSendingA = False;
-                roundRobinReg  <= True;
-            end
-            else begin
-                // Do nothing
-            end
-        end
-
-        if (!isByteEnZero(sendingStream.byteEn)) begin
-            // Change the registers and generate PcieAxiStream
-            let sideBandByteEnA = tuple2(0, 0);
-            let sideBandByteEnB = tuple2(0, 0);
-            if (isSendingA) begin
-                isInStreamAReg <= !sendingStream.isLast;
-                isInShiftAReg  <= sendingStream.isLast ? False : isInShiftAReg;
-                if (sendingStream.isFirst) begin
-                    sideBandByteEnA = byteEnAFifo.first;
-                    byteEnAFifo.deq;
-                end
-                if (sendingStream.isLast && hasStraddleSpace(sendingStream) && !isByteEnZero(pendingStream.byteEn)) begin
-                    isInStreamBReg <= !pendingStream.isLast;
-                    isInShiftBReg  <= !pendingStream.isLast;
-                    sideBandByteEnB = byteEnBFifo.first;
-                    byteEnBFifo.deq;
-                end
-            end 
-            else begin
-                isInStreamBReg <= !sendingStream.isLast;
-                isInShiftBReg  <= sendingStream.isLast ? False : isInShiftBReg;
-                if (sendingStream.isFirst) begin
-                    sideBandByteEnB = byteEnBFifo.first;
-                    byteEnBFifo.deq;
-                end
-                if (sendingStream.isLast && hasStraddleSpace(sendingStream) && !isByteEnZero(pendingStream.byteEn)) begin
-                    isInStreamAReg <= !pendingStream.isLast;
-                    isInShiftAReg  <= !pendingStream.isLast;
-                    sideBandByteEnA = byteEnAFifo.first;
-                    byteEnAFifo.deq;
-                end
-            end
-
-            let isSop = PcieTlpCtlIsSopCommon {
-                isSopPtrs  : replicate(0),
-                isSop      : 0
-            };
-            let isEop = PcieTlpCtlIsEopCommon {
-                isEopPtrs  : replicate(0),
-                isEop      : 0
-            };
-            
-            if (sendingStream.isFirst && pendingStream.isFirst) begin
-                isSop.isSop = fromInteger(valueOf(DOUBLE_TLP_IN_THIS_BEAT));
-                isSop.isSopPtrs[0] = fromInteger(valueOf(ISSOP_LANE_0));
-                isSop.isSopPtrs[1] = fromInteger(valueOf(ISSOP_LANE_32));
-            end
-            else if (sendingStream.isFirst || pendingStream.isFirst) begin
-                isSop.isSop = fromInteger(valueOf(SINGLE_TLP_IN_THIS_BEAT));
-                isSop.isSopPtrs[0] = fromInteger(valueOf(ISSOP_LANE_0));
-            end
-            if (pendingStream.isLast && !isByteEnZero(pendingStream.byteEn)) begin
-                isEop.isEop = fromInteger(valueOf(DOUBLE_TLP_IN_THIS_BEAT));
-                isEop.isEopPtrs[0] = truncate(convertByteEn2DwordPtr(sendingStream.byteEn));
-                isEop.isEopPtrs[1] = fromInteger(valueOf(STRADDLE_THRESH_DWORD_WIDTH)) + truncate(convertByteEn2DwordPtr(pendingStream.byteEn));
-            end
-            else if (sendingStream.isLast) begin
-                isEop.isEop = fromInteger(valueOf(SINGLE_TLP_IN_THIS_BEAT));
-                isEop.isEopPtrs[0] = truncate(convertByteEn2DwordPtr(sendingStream.byteEn));
-            end
-            
-            let sideBand = genRQSideBand(isEop, isSop, sideBandByteEnA, sideBandByteEnB);
-            let axiStream = ReqReqAxiStream {
-                tData  : sendingStream.data | pendingStream.data,
-                tKeep  : -1,
-                tLast  : False,
-                tUser  : pack(sideBand)
-            };
-            axiStreamOutFifo.enq(axiStream);
-        end
-    endrule
-
-    interface dataAFifoIn      = shiftA.streamFifoIn;
-    interface byteEnAFifoIn    = convertFifoToFifoIn(byteEnAFifo);
-    interface dataBFifoIn      = shiftB.streamFifoIn;
-    interface byteEnBFifoIn    = convertFifoToFifoIn(byteEnBFifo);
-    interface axiStreamFifoOut = convertFifoToFifoOut(axiStreamOutFifo);
-endmodule
 
 // Generate RequesterRequest descriptor 
 interface RqDescriptorGenerator;
@@ -558,16 +328,13 @@ endmodule
 interface RequesterRequestCore;
     interface FifoIn#(DataStream)      dataFifoIn;
     interface FifoIn#(DmaRequest)      wrReqFifoIn;
-    interface FifoIn#(DmaRequest)      rdReqFifoIn;
     interface FifoOut#(DataStream)     dataFifoOut;
     interface FifoOut#(SideBandByteEn) byteEnFifoOut;
-    interface Get#(Bool)               isWriteDone;
 endinterface
 
 module mkRequesterRequestCore(RequesterRequestCore);
     FIFOF#(DataStream)     dataInFifo  <- mkFIFOF;
     FIFOF#(DmaRequest)     wrReqInFifo <- mkFIFOF;
-    FIFOF#(DmaRequest)     rdReqInFifo <- mkFIFOF;
     FIFOF#(DataStream)     dataOutFifo <- mkFIFOF;
     FIFOF#(SideBandByteEn) byteEnOutFifo <- mkFIFOF;
 
@@ -633,14 +400,6 @@ module mkRequesterRequestCore(RequesterRequestCore);
 
     interface dataFifoIn    = convertFifoToFifoIn(dataInFifo);
     interface wrReqFifoIn   = convertFifoToFifoIn(wrReqInFifo);
-    interface rdReqFifoIn   = convertFifoToFifoIn(rdReqInFifo);
     interface dataFifoOut   = convertFifoToFifoOut(dataOutFifo);
     interface byteEnFifoOut = convertFifoToFifoOut(byteEnOutFifo);
-
-    // TODO: how to give the 
-    interface Get isWriteDone;
-        method ActionValue#(Bool) get();
-            return True;
-        endmethod
-    endinterface
 endmodule
