@@ -78,110 +78,6 @@ module mkRandomStreamSize(StreamSize seed, StreamSizeBitPtr maxSizeBitPtr, Rando
 endmodule
 
 (* doc = "testcase" *) 
-module mkStreamConcatTb(Empty);
-
-    StreamConcat dut <- mkStreamConcat;
-
-    RandomStreamSize streamASizeRandomValue <- mkRandomStreamSize(fromInteger(valueOf(SEED_1)), fromInteger(valueOf(MAX_STREAM_SIZE_PTR)));
-    RandomStreamSize streamBSizeRandomValue <- mkRandomStreamSize(fromInteger(valueOf(SEED_2)), fromInteger(valueOf(MAX_STREAM_SIZE_PTR)));
-
-    Reg#(StreamSize) streamARemainSizeReg <- mkReg(0);
-    Reg#(StreamSize) streamBRemainSizeReg <- mkReg(0);
-    Reg#(StreamSize) concatSizeReg <- mkReg(0);
-
-    FIFOF#(StreamSize) ideaConcatSizeFifo <- mkSizedFIFOF(valueOf(TEST_IDEAL_FIFO_DEPTH));
-    
-    Reg#(Bool) isInitReg <- mkReg(False);
-    Reg#(UInt#(32)) testCntReg <- mkReg(0);
-    Reg#(UInt#(32)) testRoundReg <- mkReg(0);
-    Reg#(UInt#(32)) testFinishCntReg <- mkReg(0);
-
-    Bool logDetailEn = unpack(fromInteger(valueOf(LOG_DETAILS_EN)));
-
-    rule testInit if (!isInitReg);
-        $display("INFO: start mkStreamConcatTb!");
-        isInitReg <= True;
-    endrule
-
-    rule testInput if (isInitReg && testCntReg < fromInteger(valueOf(TEST_NUM)));
-        if (testRoundReg == 0) begin
-            StreamSize sizeA <- streamASizeRandomValue.next;
-            StreamSize sizeB <- streamBSizeRandomValue.next;
-            ideaConcatSizeFifo.enq(sizeA + sizeB); 
-            testRoundReg <= (sizeA + sizeB) / getMaxFrameSize();
-
-            let isLastA = (sizeA <= getMaxFrameSize());
-            let isLastB = (sizeB <= getMaxFrameSize());
-            let firstSizeA = isLastA ? sizeA : getMaxFrameSize();
-            let firstSizeB = isLastB ? sizeB : getMaxFrameSize();
-
-            dut.inputStreamFirstFifoIn.enq(generatePsuedoStream(firstSizeA, True, isLastA));
-            dut.inputStreamSecondFifoIn.enq(generatePsuedoStream(firstSizeB, True, isLastB));
-            streamARemainSizeReg <= sizeA - firstSizeA;
-            streamBRemainSizeReg <= sizeB - firstSizeB;
-            testCntReg <= testCntReg + 1;
-            if (logDetailEn) begin
-                $display("INFO: Add Input of %d Epoch", testCntReg + 1);
-                $display("INFO: streamASize = %d, streamBSize = %d, ideaSize = %d", sizeA, sizeB, sizeA+sizeB);
-            end
-        end
-
-        else if (testRoundReg > 0) begin
-            if (streamARemainSizeReg > 0 && dut.inputStreamFirstFifoIn.notFull) begin
-                Bool isLast =  streamARemainSizeReg <= getMaxFrameSize();
-                StreamSize size = isLast ? streamARemainSizeReg : getMaxFrameSize();
-                dut.inputStreamFirstFifoIn.enq(generatePsuedoStream(size, False, isLast));
-                streamARemainSizeReg <= streamARemainSizeReg - size;
-            end
-            if (streamBRemainSizeReg > 0 && dut.inputStreamSecondFifoIn.notFull) begin
-                Bool isLast =  streamBRemainSizeReg <= getMaxFrameSize();
-                StreamSize size = isLast ? streamBRemainSizeReg : getMaxFrameSize();
-                dut.inputStreamSecondFifoIn.enq(generatePsuedoStream(size, False, isLast));
-                streamBRemainSizeReg <= streamBRemainSizeReg - size;
-            end
-            testRoundReg <= testRoundReg - 1;
-        end
-    endrule
-
-    rule testOutput;
-        let outStream = dut.outputStreamFifoOut.first;
-        StreamSize concatSize = concatSizeReg + unpack(zeroExtend(convertByteEn2BytePtr(outStream.byteEn)));
-        if (outStream.isLast) begin
-            let ideaSize = ideaConcatSizeFifo.first;
-            immAssert(
-                (concatSize == ideaSize),
-                "outStream length check @ mkStreamConcatTb::testOutput",
-                $format("ideaSize = %d, realSize = %d \n", ideaSize, concatSize)
-                );
-            if (logDetailEn) begin
-                $display("INFO: verify output ideaSize=%d, realSize=%d, ideaLastSize=%d", ideaSize, concatSize, ideaSize%getMaxFrameSize);
-            end
-                ideaConcatSizeFifo.deq;
-            testFinishCntReg <= testFinishCntReg + 1;
-            concatSizeReg <= 0;
-        end
-        else begin
-            concatSizeReg <= concatSize;
-            immAssert(
-                (outStream.data == getPseudoData()),
-                "outStream Data Check @ mkStreamConcatTb::testOutput",
-                $format(outStream)
-            );
-        end
-        dut.outputStreamFifoOut.deq;
-        dut.outputBytePtrFifoOut.deq;
-    endrule
-
-    rule testFinish;
-        if (testFinishCntReg == fromInteger(valueOf(TEST_NUM)-1)) begin
-            $display("INFO: end mkStreamConcatTb");
-            $finish();
-        end
-    endrule
-
-endmodule
-
-(* doc = "testcase" *) 
 module mkStreamSplitTb(Empty);
 
     StreamSplit dut <- mkStreamSplit;
@@ -287,7 +183,7 @@ endmodule
 module mkStreamShiftTb(Empty);
     RandomStreamSize streamSizeRandomValue <- mkRandomStreamSize(fromInteger(valueOf(SEED_1)), fromInteger(valueOf(MAX_STREAM_SIZE_PTR)));
     Vector#(TAdd#(BYTE_EN_WIDTH, 1), FIFOF#(StreamSize)) setSizeFifo <- replicateM(mkSizedFIFOF(10));
-    Vector#(TAdd#(BYTE_EN_WIDTH, 1), StreamShift)        duts        = newVector;
+    Vector#(TAdd#(BYTE_EN_WIDTH, 1), StreamPipe)        duts        = newVector;
     for (DataBytePtr idx = 0; idx <= getMaxBytePtr; idx = idx + 1) begin
         duts[idx] <- mkStreamShift(idx);
     end

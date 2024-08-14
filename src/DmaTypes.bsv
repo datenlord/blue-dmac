@@ -3,6 +3,7 @@ import FShow::*;
 import SemiFifo::*;
 import PcieTypes::*;
 import PcieAxiStreamTypes::*;
+import PcieDescriptorTypes::*;
 
 typedef PCIE_AXIS_DATA_WIDTH DATA_WIDTH;
 
@@ -21,6 +22,9 @@ typedef 2 BYTE_DWORD_SHIFT_WIDTH;
 typedef Bit#(BYTE_WIDTH) Byte;
 typedef Bit#(DWORD_WIDTH) DWord;
 typedef Bit#(1) ByteParity;
+
+typedef 4096                                BUS_BOUNDARY;
+typedef TAdd#(1, TLog#(BUS_BOUNDARY))       BUS_BOUNDARY_WIDTH;
 
 typedef 2 CONCAT_STREAM_NUM;
 
@@ -45,6 +49,7 @@ typedef TDiv#(DWORD_EN_WIDTH, 2) STRADDLE_THRESH_DWORD_WIDTH;
 typedef struct {
     DmaMemAddr startAddr;
     DmaMemAddr length;
+    Bool       isWrite;
 } DmaRequest deriving(Bits, Bounded, Eq);
 
 typedef struct {
@@ -72,7 +77,7 @@ typedef Tuple2#(
 
 instance FShow#(DmaRequest);
     function Fmt fshow(DmaRequest request);
-        return ($format("<DmaRequest: startAddr=%h, length=%h", request.startAddr, request.length));
+        return ($format("<DmaRequest: startAddr=%h, length=%h, isWrite=%b", request.startAddr, request.length, pack(request.isWrite)));
     endfunction
 endinstance
 
@@ -86,23 +91,44 @@ instance FShow#(DataStream);
     endfunction
 endinstance
 
-interface DmaCardToHostWrite;
-    interface FifoIn#(DataStream)       dataFifoIn; 
-    interface FifoIn#(DmaRequest)       reqFifoIn;
-    method Bool isDone;   // Assert when all data have transmitted to the PCIe
-endinterface
+// Straddle Parameters
+typedef struct {
+    Data     data;
+    ByteEn   byteEn;
+    Bool     isDoubleFrame;
+    Vector#(PCIE_STRADDLE_NUM, Bool) isFirst;
+    Vector#(PCIE_STRADDLE_NUM, Bool) isLast;
+    Vector#(PCIE_STRADDLE_NUM, SlotToken)  tag;
+    Vector#(PCIE_STRADDLE_NUM, Bool) isCompleted;
+} StraddleStream deriving(Bits, Bounded, Eq);
 
-interface DmaCardToHostRead;
-    interface FifoIn#(DmaRequest)       reqFifoIn;
-    interface FifoOut#(DataStream)      dataFifoOut;
-endinterface
+instance FShow#(StraddleStream);
+    function Fmt fshow(StraddleStream stream);
+        return ($format("<StraddleStream      \n",
+            "     data    = %h\n", stream.data, 
+            "     byteEn  = %b\n", stream.byteEn,
+            "     isDoubleFrame = %b\n", stream.isDoubleFrame,
+            "     isFirst = %b", pack(stream.isFirst[0]), ", isLast = %b\n", pack(stream.isLast[0]),
+            "     isFirst = %b", pack(stream.isFirst[1]), ", isLast = %b\n", pack(stream.isLast[1])
+        ));
+    endfunction
+endinstance
 
-interface DmaHostToCardWrite;
-    interface FifoOut#(DmaCsrValue)     dataFifoOut;
-    interface FifoOut#(DmaCsrAddr)      reqFifoOut;
-endinterface
+typedef 2 DMA_PATH_NUM;
+typedef 2 PCIE_STRADDLE_NUM;   // set straddle of RC and RQ same in the Xilinx IP GUI
 
-interface DmaHostToCardRead;
-    interface FifoOut#(DmaCsrAddr)      reqFifoOut;
-    interface FifoIn#(DmaCsrValue)      dataFifoIn;    
-endinterface
+typedef TAdd#(1, TLog#(DMA_PATH_NUM)) DMA_PATH_WIDTH;
+typedef Bit#(DMA_PATH_WIDTH) DmaPathNo;
+
+typedef TAdd#(1, TLog#(PCIE_STRADDLE_NUM)) PCIE_STRADDLE_WIDTH;
+typedef Bit#(PCIE_STRADDLE_WIDTH) StraddleNo;
+
+// Reorder types
+typedef TSub#(DES_NONEXTENDED_TAG_WIDTH, 1) SLOT_TOKEN_WIDTH;
+typedef Bit#(SLOT_TOKEN_WIDTH) SlotToken;
+typedef 16 SLOT_PER_PATH;
+typedef TAdd#(1, TDiv#(BUS_BOUNDARY, BYTE_EN_WIDTH)) MAX_STREAM_NUM_PER_COMPLETION;
+
+
+
+
