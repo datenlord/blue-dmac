@@ -372,7 +372,7 @@ module mkStreamShiftAlignToDw#(DataBytePtr offset)(StreamShiftAlignToDw);
 
     FIFOF#(DataBytePtr)      shiftSetFifo   <- mkSizedFIFOF(valueOf(TMul#(2, STREAM_SHIFT_LATENCY)));
 
-    Vector#(DWORD_BYTES, StreamShift) shifts = newVector;
+    Vector#(DWORD_BYTES, StreamPipe) shifts = newVector;
     for (DataBytePtr idx = 0; idx < fromInteger(valueOf(DWORD_BYTES)); idx = idx + 1 ) begin
         shifts[idx] <- mkStreamShift(offset + idx);
     end
@@ -414,12 +414,16 @@ module mkStreamShiftAlignToDw#(DataBytePtr offset)(StreamShiftAlignToDw);
     interface byteEnFifoOut = convertFifoToFifoOut(byteEnOutFifo);
 endmodule
 
+typedef 3 STREAM_HEADER_REMOVE_LATENCY;
+
 // Remove the first N Bytes of a stream
 module mkStreamHeaderRemove#(DataBytePtr headerLen)(StreamPipe);
-    FIFOF#(DataStream) inFifo <- mkFIFOF;
+    FIFOF#(DataStream) inFifo  <- mkFIFOF;
     FIFOF#(DataStream) outFifo <- mkFIFOF;
 
-    Reg#(DataStream) remainStreamReg <- mkReg(getEmptyStream);
+    Reg#(DataStream) remainStreamReg  <- mkReg(getEmptyStream);
+    Reg#(Bool)       hasLastRemainReg <- mkReg(False);
+
     DataBitPtr headerBitLen = zeroExtend(headerLen) >> valueOf(BYTE_WIDTH_WIDTH);
 
     rule removeHeader;
@@ -445,7 +449,7 @@ module mkStreamHeaderRemove#(DataBytePtr headerLen)(StreamPipe);
             };
             let newStream = DataStream {
                 data    : remainStreamReg.data | stream.data << headerBitLen,
-                byteEn  : remainStreamReg.byteEn | stream.data << headerLen,
+                byteEn  : remainStreamReg.byteEn | stream.byteEn << headerLen,
                 isFirst : stream.isFirst,
                 isLast  : stream.isLast
             };
@@ -458,7 +462,7 @@ module mkStreamHeaderRemove#(DataBytePtr headerLen)(StreamPipe);
             else begin
                 outFifo.enq(newStream);
                 if (stream.isLast) begin    
-                    if(isByteEnZero(resStream)) begin
+                    if(isByteEnZero(resStream.byteEn)) begin
                         remainStreamReg <= getEmptyStream;
                         hasLastRemainReg <= False;
                     end
@@ -481,17 +485,19 @@ module mkStreamReshape(StreamPipe);
     FIFOF#(DataStream) outFifo <- mkFIFOF;
 
     //During Stream Varibles
-    Reg#(DataBytePtr) rmBytePtrReg    <- mkReg(0);
-    Reg#(DataBitPtr)  rmBitPtrReg     <- mkReg(0);
-    Reg#(DataBytePtr) rsBytePtrReg    <- mkReg(0);
-    Reg#(DataBitPtr)  rsBitPtrReg     <- mkReg(0);
-    Reg#(Bool)        isDetectedReg   <- mkReg(False);
-    Reg#(DataStream)  remainStreamReg <- mkReg(getEmptyStream);
+    Reg#(DataBytePtr) rmBytePtrReg     <- mkReg(0);
+    Reg#(DataBitPtr)  rmBitPtrReg      <- mkReg(0);
+    Reg#(DataBytePtr) rsBytePtrReg     <- mkReg(0);
+    Reg#(DataBitPtr)  rsBitPtrReg      <- mkReg(0);
+    Reg#(Bool)        isDetectedReg    <- mkReg(False);
+    Reg#(DataStream)  remainStreamReg  <- mkReg(getEmptyStream);
+    Reg#(Bool)        hasLastRemainReg <- mkReg(False);
 
     rule shape;
         if (hasLastRemainReg) begin
-            outFifo.enq(hasLastRemainReg);
+            outFifo.enq(remainStreamReg);
             isDetectedReg <= False;
+            hasLastRemainReg <= False;
         end
         else begin
             let stream = inFifo.first;
@@ -516,7 +522,7 @@ module mkStreamReshape(StreamPipe);
                         isLast  : True
                     };
                     remainStreamReg <= remainStream;
-                    isLast = isByteEnZero(remainStream.byteEn);
+                    let isLast = isByteEnZero(remainStream.byteEn);
                     let outStream = DataStream {
                         data    : (stream.data << rmBitPtrReg) | remainStreamReg.data,
                         byteEn  : (stream.byteEn << rmBytePtrReg) | remainStreamReg.byteEn,
@@ -524,10 +530,11 @@ module mkStreamReshape(StreamPipe);
                         isLast  : isLast
                     };
                     outFifo.enq(outStream);
+                    hasLastRemainReg <= !isLast;
                     isDetectedReg <= isLast ? False : isDetectedReg;
                 end
                 else begin
-                    ourFifo.enq(stream);
+                    outFifo.enq(stream);
                 end
             end
         end

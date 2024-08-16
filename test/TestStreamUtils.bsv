@@ -239,7 +239,7 @@ module mkStreamShiftTb(Empty);
     endrule
 
     for (DataBytePtr shiftOffset = 0; shiftOffset <= getMaxBytePtr; shiftOffset = shiftOffset + 1) begin
-        StreamShift dut = duts[shiftOffset];
+        StreamPipe dut = duts[shiftOffset];
 
         rule testOutput if (isInitReg);
             let shiftStream = dut.streamFifoOut.first;

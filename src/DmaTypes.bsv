@@ -1,4 +1,4 @@
-
+import Vector::*;
 import FShow::*;
 import SemiFifo::*;
 import PcieTypes::*;
@@ -41,10 +41,6 @@ typedef Bit#(TAdd#(1, TLog#(DWORD_EN_WIDTH))) DataDwordPtr;
 
 typedef Bit#(TAdd#(1, TLog#(DWORD_BYTES)))    DWordBytePtr;
 typedef Bit#(BYTE_DWORD_SHIFT_WIDTH)          ByteModDWord;
-
-typedef TDiv#(DATA_WIDTH, 2) STRADDLE_THRESH_BIT_WIDTH;
-typedef TDiv#(BYTE_EN_WIDTH, 2) STRADDLE_THRESH_BYTE_WIDTH;
-typedef TDiv#(DWORD_EN_WIDTH, 2) STRADDLE_THRESH_DWORD_WIDTH;
 
 typedef struct {
     DmaMemAddr startAddr;
@@ -92,6 +88,11 @@ instance FShow#(DataStream);
 endinstance
 
 // Straddle Parameters
+
+typedef TDiv#(DATA_WIDTH, PCIE_STRADDLE_NUM) STRADDLE_THRESH_BIT_WIDTH;
+typedef TDiv#(BYTE_EN_WIDTH, PCIE_STRADDLE_NUM) STRADDLE_THRESH_BYTE_WIDTH;
+typedef TDiv#(DWORD_EN_WIDTH, PCIE_STRADDLE_NUM) STRADDLE_THRESH_DWORD_WIDTH;
+
 typedef struct {
     Data     data;
     ByteEn   byteEn;
@@ -114,8 +115,42 @@ instance FShow#(StraddleStream);
     endfunction
 endinstance
 
+function StraddleStream getEmptyStraddleStream();
+    let sdStream = StraddleStream {
+        data      : 0,
+        byteEn    : 0,
+        isDoubleFrame : False,
+        isFirst   : replicate(False),
+        isLast    : replicate(False),
+        tag       : replicate(0),
+        isCompleted : replicate(False)
+    };
+    return sdStream;
+endfunction
+
+function Data getStraddleData(PcieTlpCtlIsSopPtr isSopPtr, Data data);
+    Data sData = 0;
+    if (isSopPtr == fromInteger(valueOf(ISSOP_LANE_0))) begin
+        sData = zeroExtend(Data'(data[valueOf(STRADDLE_THRESH_BIT_WIDTH)-1:0]));
+    end
+    else begin
+        sData = data >> valueOf(STRADDLE_THRESH_BIT_WIDTH);
+    end
+    return sData;
+endfunction
+
+function ByteEn getStraddleByteEn(PcieTlpCtlIsSopPtr isSopPtr, ByteEn byteEn);
+    ByteEn sByteEn = 0;
+    if (isSopPtr == fromInteger(valueOf(ISSOP_LANE_0))) begin
+        sByteEn = zeroExtend(ByteEn'(byteEn[valueOf(STRADDLE_THRESH_BYTE_WIDTH)-1:0]));
+    end
+    else begin
+        sByteEn = byteEn >> valueOf(STRADDLE_THRESH_BYTE_WIDTH);
+    end
+    return sByteEn;
+endfunction
+
 typedef 2 DMA_PATH_NUM;
-typedef 2 PCIE_STRADDLE_NUM;   // set straddle of RC and RQ same in the Xilinx IP GUI
 
 typedef TAdd#(1, TLog#(DMA_PATH_NUM)) DMA_PATH_WIDTH;
 typedef Bit#(DMA_PATH_WIDTH) DmaPathNo;

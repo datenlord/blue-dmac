@@ -9,10 +9,11 @@ import PrimUtils::*;
 import PcieTypes::*;
 import PcieDescriptorTypes::*;
 import StreamUtils::*;
-import ReqRequestCore::*;
-import DmaRequester::*;
+import PcieAdapter::*;
 import TestStreamUtils::*;
-import ReqCompleterCore::*;
+import DmaUtils::*;
+import DmaC2HPipe::*;
+
 
 typedef 100000 CHUNK_PER_EPOCH_TEST_NUM;
 typedef 64'hFFFFFFFFFFFFFFFF MAX_ADDRESS;
@@ -21,6 +22,7 @@ typedef 2'b00 DEFAULT_TLP_SIZE_SETTING;
 typedef 4   CHUNK_TX_TEST_SETTING_NUM;
 typedef 6   CHUNK_RX_TEST_SETTING_NUM;
 
+(* doc = "testcase" *) 
 module mkChunkComputerTb(Empty);
 
     ChunkCompute dut <- mkChunkComputer(DMA_TX);
@@ -55,8 +57,9 @@ module mkChunkComputerTb(Empty);
         let testEnd = testAddr + testLength - 1;
         if (testEnd > testAddr && testEnd <= fromInteger(valueOf(MAX_ADDRESS))) begin 
             let request = DmaRequest{
-                startAddr: testAddr,
-                length: testLength
+                startAddr : testAddr,
+                length    : testLength,
+                isWrite   : False
             };
             lenRemainReg <= testLength;
             dut.dmaRequestFifoIn.enq(request);
@@ -102,14 +105,16 @@ endmodule
 typedef 60 SIMPLE_TEST_BYTELEN;
 typedef 'hABCDEF SIMPLE_TEST_ADDR;
 
-module mkSimpleRequesterRequestCoreTb(Empty);
-    RequesterRequestCore dut <- mkRequesterRequestCore;
+(* doc = "testcase" *) 
+module mkSimpleC2HWriteCoreTb(Empty);
+    C2HWriteCore dut <- mkC2HWriteCore;
     Reg#(UInt#(32)) testCntReg <- mkReg(0);
 
     rule testInput if (testCntReg < 1);
         let req = DmaRequest {
             startAddr : fromInteger(valueOf(SIMPLE_TEST_ADDR)),
-            length    : fromInteger(valueOf(SIMPLE_TEST_BYTELEN))
+            length    : fromInteger(valueOf(SIMPLE_TEST_BYTELEN)),
+            isWrite   : True
         };
         dut.wrReqFifoIn.enq(req);
         let stream = generatePsuedoStream(fromInteger(valueOf(SIMPLE_TEST_BYTELEN)), True, True);
@@ -118,12 +123,12 @@ module mkSimpleRequesterRequestCoreTb(Empty);
     endrule
 
     rule testOutput;
-        let stream = dut.dataFifoOut.first;
-        dut.dataFifoOut.deq;
+        let stream = dut.tlpFifoOut.first;
+        dut.tlpFifoOut.deq;
         $display(fshow(stream));
         if (stream.isFirst) begin
-            let {firstByteEn, lastByteEn} = dut.byteEnFifoOut.first;
-            dut.byteEnFifoOut.deq;
+            let {firstByteEn, lastByteEn} = dut.tlpSideBandFifoOut.first;
+            dut.tlpSideBandFifoOut.deq;
             $display("firstByteEn:%b, lastByteEn:%b", firstByteEn, lastByteEn);
             PcieRequesterRequestDescriptor desc = unpack(truncate(stream.data));
             $display("Descriptor Elements: dwordCnt:%d, address:%h", desc.dwordCnt, desc.address << 2);
@@ -134,47 +139,8 @@ module mkSimpleRequesterRequestCoreTb(Empty);
     endrule
 endmodule
 
-module mkSimpleRequesterRequestTb(Empty);
-    RequesterRequest dut <- mkRequesterRequest;
-    Reg#(UInt#(32)) testCntReg <- mkReg(0);
-    Reg#(UInt#(32)) tlpNumReg  <- mkReg(2);
-
-    rule testInput if (testCntReg < 1);
-        let req = DmaRequest {
-            startAddr : fromInteger(valueOf(SIMPLE_TEST_ADDR)),
-            length    : fromInteger(valueOf(SIMPLE_TEST_BYTELEN))
-        };
-        dut.reqA.wrReqFifoIn.enq(req);
-        dut.reqB.wrReqFifoIn.enq(req);
-        let stream = generatePsuedoStream(fromInteger(valueOf(SIMPLE_TEST_BYTELEN)), True, True);
-        dut.reqA.wrDataFifoIn.enq(stream);
-        dut.reqB.wrDataFifoIn.enq(stream);
-        testCntReg <= testCntReg + 1;
-    endrule
-
-    rule testOutput;
-        let stream = dut.axiStreamFifoOut.first;
-        dut.axiStreamFifoOut.deq;
-        $display("data: %h", stream.tData);
-        PcieRequesterRequestSideBandFrame sideBand = unpack(stream.tUser);
-        $display("isSop : ", sideBand.isSop.isSop, ", isEop : ", sideBand.isEop.isEop);
-        let tlpNum = tlpNumReg;
-        if (sideBand.isEop.isEop == fromInteger(valueOf(SINGLE_TLP_IN_THIS_BEAT))) begin
-                tlpNum = tlpNum - 1;
-        end
-        else if (sideBand.isEop.isEop == fromInteger(valueOf(DOUBLE_TLP_IN_THIS_BEAT))) begin
-                tlpNum = tlpNum - 2;
-        end
-        if (tlpNum == 0) begin
-            $finish();
-        end
-        tlpNumReg <= tlpNum;
-    endrule
-
-endmodule
-
 module mkSimpleConvertStraddleAxisToDataStreamTb(Empty);
-    ConvertStraddleAxisToDataStream dut <- mkConvertStraddleToDataStream;
+    ConvertStraddleAxisToDataStream dut <- mkConvertStraddleAxisToDataStream;
     Reg#(UInt#(32)) testCntReg <- mkReg(0);
     Reg#(UInt#(32)) tlpNumReg  <- mkReg(2);
 
