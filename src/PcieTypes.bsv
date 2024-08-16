@@ -5,6 +5,8 @@ import PcieAxiStreamTypes::*;
 typedef 512 PCIE_TLP_BYTES;
 typedef TLog#(PCIE_TLP_BYTES) PCIE_TLP_BYTES_WIDTH;
 
+typedef 2 PCIE_STRADDLE_NUM;   // set straddle of RC and RQ same in the Xilinx IP GUI
+
 typedef 512 PCIE_TDATA_WIDTH;
 typedef 64  PCIE_TDATA_BYTES;
 typedef 16  PCIE_TDATA_DWORDS;

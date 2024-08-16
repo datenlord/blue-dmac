@@ -11,11 +11,21 @@ import StreamUtils::*;
 import PcieDescriptorTypes::*;
 import CompletionFifo::*;
 
+typedef 64  CMPL_NPREQ_INFLIGHT_NUM;
+typedef 20  CMPL_NPREQ_WAITING_CLKS;
+typedef 2'b11 NP_CREDIT_INCREMENT;
+typedef 2'b00 NP_CREDIT_NOCHANGE;
+
+typedef 3 BYTEEN_INFIFO_DEPTH;
+
+typedef 'h1F IDEA_CQ_TKEEP_OF_CSR;
+typedef 'hF  IDEA_CC_TKEEP_OF_CSR;
+
 // Support Straddle in RQ/RC
 interface RequesterAxiStreamAdapter;
     // Dma To Adapter DataStreams
     interface Vector#(DMA_PATH_NUM, FifoIn#(DataStream))     dmaDataFifoIn;
-    interface Vector#(DMA_PATH_NUM, FIfoIn#(SideBandByteEn)) dmaSideBandFifoIn;
+    interface Vector#(DMA_PATH_NUM, FifoIn#(SideBandByteEn)) dmaSideBandFifoIn;
     // Adapter To Dma StraddleStreams, which may contains 2 TLP
     interface Vector#(DMA_PATH_NUM, FifoOut#(StraddleStream)) dmaDataFifoOut;
     // C2H RQ AxiStream Master
@@ -78,7 +88,67 @@ interface CompleterAxiStreamAdapter;
     (* prefix = "" *) interface RawPcieCompleterComplete rawCompleterComplete;
 endinterface
 
+// Completer Only Receives and Transmits One Beat TLP, in which isFirst = isLast = True
 module mkCompleterAxiStreamAdapter(CompleterAxiStreamAdapter);
+    FIFOF#(DataStream) inFifo  <- mkFIFOF;
+    FIFOF#(DataStream) outFifo <- mkFIFOF;
+    FIFOF#(CmplReqAxiStream)  reqInFifo   <- mkFIFOF;
+    FIFOF#(CmplCmplAxiStream) cmplOutFifo <- mkFIFOF;
+
+    Reg#(Bool) isInPacketReg <- mkReg(False);
+
+    let rawAxiStreamSlaveIfc  <- mkFifoInToRawPcieAxiStreamSlave(convertFifoToFifoIn(reqInFifo));
+    let rawAxiStreamMasterIfc <- mkFifoOutToRawPcieAxiStreamMaster(convertFifoToFifoOut(cmplOutFifo));
+
+    rule genAxis;
+        // Straddle mode is disable of completer
+        let stream = inFifo.first;
+        inFifo.deq;
+        if (stream.isFirst && stream.isLast) begin
+            let isSop = PcieTlpCtlIsSopCommon {
+                isSopPtrs : replicate(0),  
+                isSop     : 1 
+            };
+            let isEop = PcieTlpCtlIsEopCommon {
+                isEopPtrs : replicate(0), 
+                isEop     : 1
+            };
+            // Do not enable parity check in the core
+            let sideBand = PcieCompleterCompleteSideBandFrame {
+                parity      : 0,  
+                discontinue : False,
+                isSop       : isSop,
+                isEop       : isEop
+            };
+            let axiStream = CmplCmplAxiStream {
+                tData : stream.data,
+                tKeep : fromInteger(valueOf(IDEA_CC_TKEEP_OF_CSR)),
+                tLast : True,
+                tUser : pack(sideBand)
+            };
+            cmplOutFifo.enq(axiStream);
+        end
+    endrule
+
+    rule parseAxis;
+        let axiStream = reqInFifo.first;
+        reqInFifo.deq;
+        isInPacketReg <= !axiStream.tLast;
+        // First Beat
+        if (!isInPacketReg && axiStream.tLast) begin
+            PcieCompleterRequestSideBandFrame sideBand = unpack(axiStream.tUser);
+            let stream = DataStream {
+                data    : axiStream.tData,
+                byteEn  : sideBand.dataByteEn,
+                isFirst : True,
+                isLast  : True
+            };
+            outFifo.enq(stream);
+        end
+    endrule
+
+    interface dmaDataFifoOut = convertFifoToFifoOut(outFifo);
+    interface dmaDataFifoIn  = convertFifoToFifoIn(inFifo);
 
     interface RawPcieCompleterRequest rawCompleterRequest;
         interface rawAxiStreamSlave = rawAxiStreamSlaveIfc;
@@ -307,8 +377,8 @@ module mkConvertDataStreamsToStraddleAxis(ConvertDataStreamsToStraddleAxis);
     Vector#(DMA_PATH_NUM, FifoIn#(SideBandByteEn)) byteEnFifoInIfc = newVector;
     dataFifoInIfc[0]   = shiftA.streamFifoIn;
     dataFifoInIfc[1]   = shiftB.streamFifoIn;
-    byteEnFifoInIfc[0] = onvertFifoToFifoIn(byteEnAFifo);
-    byteEnFifoInIfc[1] = onvertFifoToFifoIn(byteEnBFifo);
+    byteEnFifoInIfc[0] = convertFifoToFifoIn(byteEnAFifo);
+    byteEnFifoInIfc[1] = convertFifoToFifoIn(byteEnBFifo);
     interface dataFifoIn       = dataFifoInIfc;
     interface byteEnFifoIn     = byteEnFifoInIfc;
     interface axiStreamFifoOut = convertFifoToFifoOut(axiStreamOutFifo);
@@ -326,8 +396,23 @@ module mkConvertStraddleAxisToDataStream(ConvertStraddleAxisToDataStream);
     // During TLP varibles
     Vector#(DMA_PATH_NUM, Reg#(Bool)) isInTlpRegs <- replicateM(mkReg(False));
     Vector#(DMA_PATH_NUM, Reg#(Bool)) isCompleted <- replicateM(mkReg(False));
-    Vector#(DMA_PATH_NUM, Reg#(SlotToken)) tagReg <- mkReg(0);
+    Vector#(DMA_PATH_NUM, Reg#(SlotToken)) tagReg <- replicateM(mkReg(0));
 
+    function PcieRequesterCompleteDescriptor getDescriptorFromData(PcieTlpCtlIsSopPtr isSopPtr, Data data);
+        if (isSopPtr == fromInteger(valueOf(ISSOP_LANE_0))) begin
+            return unpack(truncate(data));
+        end
+        else begin
+            return unpack(truncate(data >> valueOf(STRADDLE_THRESH_BIT_WIDTH)));
+        end
+    endfunction
+    
+    function Bool isMyValidTlp(DmaPathNo path, PcieRequesterCompleteDescriptor desc);
+        Bool valid = (desc.status == fromInteger(valueOf(SUCCESSFUL_CMPL))) && (!desc.isPoisoned);
+        Bool pathMatch = (truncate(path) == desc.tag[valueOf(DES_NONEXTENDED_TAG_WIDTH) - 1]);
+        return valid && pathMatch;
+    endfunction
+    
     rule parseAxiStream;
         let axiStream = axiStreamInFifo.first;
         axiStreamInFifo.deq;
@@ -360,7 +445,7 @@ module mkConvertStraddleAxisToDataStream(ConvertStraddleAxisToDataStream);
                 // 1 belongs to this path
                 else if (isMyValidTlp(pathIdx, desc1)) begin
                     let isSopPtr = isSop.isSopPtrs[1];
-                    sdStream.data = getStraddleData(isSopPtr, axiStream.tData)
+                    sdStream.data = getStraddleData(isSopPtr, axiStream.tData);
                     sdStream.byteEn = getStraddleByteEn(isSopPtr, sideBand.dataByteEn);
                     sdStream.isDoubleFrame = False;
                     sdStream.isFirst[0] = True;
@@ -375,7 +460,7 @@ module mkConvertStraddleAxisToDataStream(ConvertStraddleAxisToDataStream);
                 // 0 belongs to this path
                 else if (isMyValidTlp(pathIdx, desc0)) begin
                     let isSopPtr = isSop.isSopPtrs[0];
-                    sdStream.data = getStraddleData(isSopPtr, axiStream.tData)
+                    sdStream.data = getStraddleData(isSopPtr, axiStream.tData);
                     sdStream.byteEn = getStraddleByteEn(isSopPtr, sideBand.dataByteEn);
                     sdStream.isDoubleFrame = False;
                     sdStream.isFirst[0] = True;
@@ -428,7 +513,7 @@ module mkConvertStraddleAxisToDataStream(ConvertStraddleAxisToDataStream);
                         isCompleted[pathIdx] <= desc.isRequestCompleted;
                     end
                     else if (isMyValidTlp(pathIdx, desc)) begin
-                        sdStream.data = getStraddleData(isSopPtr, axiStream.tData)
+                        sdStream.data = getStraddleData(isSopPtr, axiStream.tData);
                         sdStream.byteEn = getStraddleByteEn(isSopPtr, sideBand.dataByteEn);
                         sdStream.isDoubleFrame = False;
                         sdStream.isFirst[0] = True;
@@ -441,7 +526,7 @@ module mkConvertStraddleAxisToDataStream(ConvertStraddleAxisToDataStream);
                         isCompleted[pathIdx] <= desc.isRequestCompleted;
                     end
                     else if (isInTlpRegs[pathIdx]) begin
-                        sdStream.data = getStraddleData(0, axiStream.tData)
+                        sdStream.data = getStraddleData(0, axiStream.tData);
                         sdStream.byteEn = getStraddleByteEn(0, sideBand.dataByteEn);
                         sdStream.isDoubleFrame = False;
                         sdStream.isFirst[0] = False;
@@ -464,7 +549,7 @@ module mkConvertStraddleAxisToDataStream(ConvertStraddleAxisToDataStream);
                     sdStream.isFirst[0] = False;
                     sdStream.isLast[0] = unpack(isEop.isEop[0]);
                     sdStream.tag[0] = tagReg[pathIdx];
-                    sdStream.isCompleted = isCompleted[pathIdx];
+                    sdStream.isCompleted[0] = isCompleted[pathIdx];
                     outFifos[pathIdx].enq(sdStream);
                     tagReg[pathIdx] <= sdStream.tag[0];
                     isInTlpRegs[pathIdx] <= !sdStream.isLast[0];

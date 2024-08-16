@@ -10,6 +10,7 @@ import PrimUtils::*;
 import StreamUtils::*;
 import PcieDescriptorTypes::*;
 
+
 typedef Bit#(BUS_BOUNDARY_WIDTH)            PcieTlpMaxMaxPayloadSize;
 typedef Bit#(TLog#(BUS_BOUNDARY_WIDTH))     PcieTlpSizeWidth;
 
@@ -27,6 +28,7 @@ typedef struct {
     DmaMemAddr firstChunkLen;
 } ChunkRequestFrame deriving(Bits, Eq);                     
 
+// Split the input DmaRequest Info MRRS aligned chunkReqs
 interface ChunkCompute;
     interface FifoIn#(DmaRequest)  dmaRequestFifoIn;
     interface FifoOut#(DmaRequest) chunkRequestFifoOut;
@@ -76,8 +78,9 @@ module mkChunkComputer (TRXDirection direction, ChunkCompute ifc);
             if (totalLenRemainReg <= tlpMaxSize) begin 
                 isSplittingReg <= False; 
                 outputFifo.enq(DmaRequest {
-                    startAddr: newChunkPtrReg,
-                    length: totalLenRemainReg
+                    startAddr : newChunkPtrReg,
+                    length    : totalLenRemainReg,
+                    isWrite   : False
                 });
                 splitFifo.deq;
                 totalLenRemainReg <= 0;
@@ -85,8 +88,9 @@ module mkChunkComputer (TRXDirection direction, ChunkCompute ifc);
             else begin
                 isSplittingReg <= True;
                 outputFifo.enq(DmaRequest {
-                    startAddr: newChunkPtrReg,
-                    length: tlpMaxSize
+                    startAddr : newChunkPtrReg,
+                    length    : tlpMaxSize,
+                    isWrite   : False
                 });
                 newChunkPtrReg <= newChunkPtrReg + tlpMaxSize;
                 totalLenRemainReg <= totalLenRemainReg - tlpMaxSize;
@@ -97,8 +101,9 @@ module mkChunkComputer (TRXDirection direction, ChunkCompute ifc);
             Bool isSplittingNextCycle = (remainderLength > 0);
             isSplittingReg <= isSplittingNextCycle;
             outputFifo.enq(DmaRequest {
-                startAddr: splitRequest.dmaRequest.startAddr,
-                length: splitRequest.firstChunkLen
+                startAddr : splitRequest.dmaRequest.startAddr,
+                length    : splitRequest.firstChunkLen,
+                isWrite   : False
             }); 
             if (!isSplittingNextCycle) begin 
                 splitFifo.deq; 
@@ -185,7 +190,8 @@ module mkChunkSplit(TRXDirection direction, ChunkSplit ifc);
             firstChunkSplitor.splitLocationFifoIn.enq(unpack(truncate(firstChunkLen)));
             let firstReq = DmaRequest {
                 startAddr : request.startAddr,
-                length    : firstChunkLen
+                length    : firstChunkLen,
+                isWrite   : request.isWrite
             };
             firstReqPipeFifo.enq(firstReq);
             firstChunkSplitor.inputStreamFifoIn.enq(stream);
@@ -238,7 +244,8 @@ module mkChunkSplit(TRXDirection direction, ChunkSplit ifc);
                     remainLenReg     <= 0;
                     let chunkReq = DmaRequest {
                         startAddr: nextStartAddrReg,
-                        length   : remainLenReg
+                        length   : remainLenReg,
+                        isWrite  : True
                     };
                     reqOutFifo.enq(chunkReq);
                 end
@@ -247,7 +254,8 @@ module mkChunkSplit(TRXDirection direction, ChunkSplit ifc);
                     remainLenReg     <= remainLenReg - tlpMaxSizeReg;
                     let chunkReq = DmaRequest {
                         startAddr: nextStartAddrReg,
-                        length   : tlpMaxSizeReg
+                        length   : tlpMaxSizeReg,
+                        isWrite  : True
                     };
                     reqOutFifo.enq(chunkReq);
                 end
@@ -275,8 +283,6 @@ module mkChunkSplit(TRXDirection direction, ChunkSplit ifc);
         endmethod
     endinterface
 endmodule
-
-typedef 3 BYTEEN_INFIFO_DEPTH;
 
 // Generate RequesterRequest descriptor 
 interface RqDescriptorGenerator;
@@ -323,83 +329,3 @@ module mkRqDescriptorGenerator#(Bool isWrite)(RqDescriptorGenerator);
     interface descFifoOut = convertFifoToFifoOut(descOutFifo);
 endmodule
 
-// Core path of a single stream, from (DataStream, DmaRequest) ==> (DataStream, SideBandByteEn)
-// split to chunks, align to DWord and add descriptor at the first
-interface RequesterRequestCore;
-    interface FifoIn#(DataStream)      dataFifoIn;
-    interface FifoIn#(DmaRequest)      wrReqFifoIn;
-    interface FifoOut#(DataStream)     dataFifoOut;
-    interface FifoOut#(SideBandByteEn) byteEnFifoOut;
-endinterface
-
-module mkRequesterRequestCore(RequesterRequestCore);
-    FIFOF#(DataStream)     dataInFifo  <- mkFIFOF;
-    FIFOF#(DmaRequest)     wrReqInFifo <- mkFIFOF;
-    FIFOF#(DataStream)     dataOutFifo <- mkFIFOF;
-    FIFOF#(SideBandByteEn) byteEnOutFifo <- mkFIFOF;
-
-    ChunkSplit chunkSplit <- mkChunkSplit(DMA_TX);
-    StreamShiftAlignToDw streamAlign <- mkStreamShiftAlignToDw(fromInteger(valueOf(TDiv#(DES_RQ_DESCRIPTOR_WIDTH, BYTE_WIDTH))));
-    RqDescriptorGenerator rqDescGenerator <- mkRqDescriptorGenerator(True);
-
-    // Pipeline stage 1: split the whole write request to chunks, latency = 3
-    rule splitToChunks;
-        let wrStream = dataInFifo.first;
-        if (wrStream.isFirst && wrReqInFifo.notEmpty) begin
-            wrReqInFifo.deq;
-            chunkSplit.reqFifoIn.enq(wrReqInFifo.first);
-            dataInFifo.deq;
-            chunkSplit.dataFifoIn.enq(wrStream);
-        end
-        else if (!wrStream.isFirst) begin
-            dataInFifo.deq;
-            chunkSplit.dataFifoIn.enq(wrStream);
-        end
-    endrule
-
-    // Pipeline stage 2: shift the datastream for descriptor adding and dw alignment
-    rule shiftToAlignment;
-        if (chunkSplit.chunkReqFifoOut.notEmpty) begin
-            let chunkReq = chunkSplit.chunkReqFifoOut.first;
-            chunkSplit.chunkReqFifoOut.deq;
-            let endAddr = chunkReq.startAddr + chunkReq.length;
-            let exReq = DmaExtendRequest {
-                startAddr:  chunkReq.startAddr,
-                endAddr  :  endAddr,
-                length   :  chunkReq.length
-            };
-            streamAlign.reqFifoIn.enq(exReq);
-            rqDescGenerator.exReqFifoIn.enq(exReq);
-        end
-        if (chunkSplit.chunkDataFifoOut.notEmpty) begin
-            let chunkDataStream = chunkSplit.chunkDataFifoOut.first;
-            chunkSplit.chunkDataFifoOut.deq;
-            streamAlign.dataFifoIn.enq(chunkDataStream);
-        end
-    endrule
-
-    // Pipeline stage 3: Add descriptor and add to the axis convert module
-    rule addDescriptorToAxis;
-        if (streamAlign.byteEnFifoOut.notEmpty) begin
-            let sideBandByteEn = streamAlign.byteEnFifoOut.first;
-            streamAlign.byteEnFifoOut.deq;
-            byteEnOutFifo.enq(sideBandByteEn);
-        end
-        if (streamAlign.dataFifoOut.notEmpty) begin
-            let stream = streamAlign.dataFifoOut.first;
-            streamAlign.dataFifoOut.deq;
-            if (stream.isFirst) begin
-                let descStream = rqDescGenerator.descFifoOut.first;
-                rqDescGenerator.descFifoOut.deq;
-                stream.data = stream.data | descStream.data;
-                stream.byteEn = stream.byteEn | descStream.byteEn;
-            end
-            dataOutFifo.enq(stream);
-        end
-    endrule
-
-    interface dataFifoIn    = convertFifoToFifoIn(dataInFifo);
-    interface wrReqFifoIn   = convertFifoToFifoIn(wrReqInFifo);
-    interface dataFifoOut   = convertFifoToFifoOut(dataOutFifo);
-    interface byteEnFifoOut = convertFifoToFifoOut(byteEnOutFifo);
-endmodule

@@ -23,7 +23,10 @@ endinterface
 // TODO : connect Configurator to other modules
 (* synthesize *)
 module mkDmaController(DmaController);
-    Vector#(DMA_PATH_NUM, DmaC2HPipe) c2hPipes <- replicateM(mkDmaC2HPipe);
+    Vector#(DMA_PATH_NUM, DmaC2HPipe) c2hPipes = newVector;
+    for (DmaPathNo pathIdx = 0; pathIdx < fromInteger(valueOf(DMA_PATH_NUM)); pathIdx = pathIdx + 1) begin
+        c2hPipes[pathIdx] <- mkDmaC2HPipe(pathIdx);
+    end
     DmaH2CPipe h2cPipe <- mkDmaH2cPipe;
 
     RequesterAxiStreamAdapter reqAdapter  <- mkRequesterAxiStreamAdapter;
