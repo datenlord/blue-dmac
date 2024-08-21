@@ -34,6 +34,7 @@ interface RequesterAxiStreamAdapter;
     (* prefix = "" *) interface RawPcieRequesterComplete rawRequesterComplete;
 endinterface
 
+// (* synthesize *) //
 module mkRequesterAxiStreamAdapter(RequesterAxiStreamAdapter);
     ConvertDataStreamsToStraddleAxis dmaToAxisConverter <- mkConvertDataStreamsToStraddleAxis;
     ConvertStraddleAxisToDataStream  axisToDmaConverter <- mkConvertStraddleAxisToDataStream;
@@ -89,6 +90,7 @@ interface CompleterAxiStreamAdapter;
 endinterface
 
 // Completer Only Receives and Transmits One Beat TLP, in which isFirst = isLast = True
+// (* synthesize *) //
 module mkCompleterAxiStreamAdapter(CompleterAxiStreamAdapter);
     FIFOF#(DataStream) inFifo  <- mkFIFOF;
     FIFOF#(DataStream) outFifo <- mkFIFOF;

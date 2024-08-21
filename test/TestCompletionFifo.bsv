@@ -152,7 +152,7 @@ interface CFifoInstTb;
     interface FifoOut#(DataStream) drain;
 endinterface
 
-(* synthesize *)
+// (* synthesize *) //
 module mkCompletionFifoInst(CFifoInstTb);
     CompletionFifo#(TEST_SLOT_NUM, DataStream) cFifo <- mkCompletionFifo(valueOf(MAX_STREAM_NUM_PER_COMPLETION));
     interface reserve  = cFifo.reserve;

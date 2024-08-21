@@ -8,8 +8,8 @@ OUTPUTDIR ?= output
 LOGFILE ?= run.log
 RUNTOPHASE ?= place # synth place route all
 PARTNAME = xcvu13p-fhgb2104-2-i
-TARGETFILE ?= ../test/TestCompletionFifo.bsv
-TOPMODULE ?= mkCompletionFifoInst
+TARGETFILE ?= ../src/DmaWrapper.bsv
+TOPMODULE ?= mkRawDmaController
 
 export TOP = $(TOPMODULE)
 export RTL = $(VLOGDIR)
