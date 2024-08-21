@@ -28,6 +28,7 @@ interface DmaC2HPipe;
 endinterface
 
 // Single Path module
+// (* synthesize *) //
 module mkDmaC2HPipe#(DmaPathNo pathIdx)(DmaC2HPipe);
     C2HReadCore  readCore  <- mkC2HReadCore(pathIdx);
     C2HWriteCore writeCore <- mkC2HWriteCore;
@@ -202,7 +203,7 @@ module mkC2HReadCore#(DmaPathNo pathIdx)(C2HReadCore);
         };
         let stream = DataStream {
             data    : zeroExtend(pack(descriptor)),
-            byteEn  : convertBytePtr2ByteEn(fromInteger(valueOf(DES_RQ_DESCRIPTOR_WIDTH))),
+            byteEn  : convertBytePtr2ByteEn(fromInteger(valueOf(TDiv#(DES_RQ_DESCRIPTOR_WIDTH, BYTE_WIDTH)))),
             isFirst : True,
             isLast  : True
         };

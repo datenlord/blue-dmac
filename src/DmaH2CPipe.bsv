@@ -6,6 +6,7 @@ import PrimUtils::*;
 import PcieAxiStreamTypes::*;
 import PcieTypes::*;
 import PcieDescriptorTypes::*;
+import PcieAdapter::*;
 import DmaTypes::*;
 
 typedef 1 IDEA_CQ_CSR_DWORD_CNT;
@@ -24,7 +25,7 @@ interface DmaH2CPipe;
     // TODO: Cfg Ifc
 endinterface
 
-(* synthesize *)
+// (* synthesize *) //
 module mkDmaH2CPipe(DmaH2CPipe);
     
     FIFOF#(DataStream)  tlpInFifo    <- mkFIFOF;
@@ -32,7 +33,7 @@ module mkDmaH2CPipe(DmaH2CPipe);
 
     FIFOF#(DmaRequest)  reqOutFifo   <- mkFIFOF;
     FIFOF#(DmaCsrValue) dataInFifo   <- mkFIFOF;
-    FIFOF#(DmaCsrValue) dataOutFifo  <- mkFIFOF
+    FIFOF#(DmaCsrValue) dataOutFifo  <- mkFIFOF;
 
     FIFOF#(Tuple2#(DmaRequest, PcieCompleterRequestDescriptor)) pendingFifo <- mkSizedFIFOF(valueOf(CMPL_NPREQ_INFLIGHT_NUM));
 
@@ -47,7 +48,19 @@ module mkDmaH2CPipe(DmaH2CPipe);
     Reg#(Bool) isInPacket <- mkReg(False);
     Reg#(UInt#(32)) illegalPcieReqCntReg <- mkReg(0);
 
-    BytePtr csrBytes = fromInteger(valueOf(TDiv#(DMA_CSR_DATA_WIDTH, BYTE_WIDTH)));
+    DataBytePtr csrBytes = fromInteger(valueOf(TDiv#(DMA_CSR_DATA_WIDTH, BYTE_WIDTH)));
+
+    function DmaCsrAddr getCsrAddrFromCqDescriptor(PcieCompleterRequestDescriptor descriptor);
+        let addr = getAddrLowBits(zeroExtend(descriptor.address), descriptor.barAperture);
+        // Only support one BAR now, no operation
+        if (descriptor.barId == 0) begin
+            addr = addr;
+        end
+        else begin
+            addr = 0;
+        end
+        return truncate(addr << valueOf(TSub#(DMA_MEM_ADDR_WIDTH, DES_ADDR_WIDTH)));
+    endfunction
 
     rule parseTlp;
         tlpInFifo.deq;
@@ -58,13 +71,13 @@ module mkDmaH2CPipe(DmaH2CPipe);
             case (descriptor.reqType) 
                 fromInteger(valueOf(MEM_WRITE_REQ)): begin
                     $display("SIM INFO @ mkDmaH2CPipe: MemWrite Detect!");
+                    let firstData = getDataFromFirstBeat(stream);
+                    DmaCsrValue wrValue = truncate(firstData);
+                    let wrAddr = getCsrAddrFromCqDescriptor(descriptor);
                     if (descriptor.dwordCnt == fromInteger(valueOf(IDEA_CQ_CSR_DWORD_CNT))) begin
-                        let firstData = getDataFromFirstBeat(stream);
-                        DmaCsrValue wrValue = firstData[valueOf(DMA_CSR_ADDR_WIDTH)-1:0];
-                        DmaCsrAddr wrAddr = getCsrAddrFromCqDescriptor(descriptor);
                         $display("SIM INFO @ mkDmaH2CPipe: Valid wrReq with Addr %h, data %h", wrAddr, wrValue);
                         let req = DmaRequest {
-                            startAddr : wrAddr,
+                            startAddr : zeroExtend(wrAddr),
                             length    : zeroExtend(csrBytes),
                             isWrite   : True
                         };
@@ -72,8 +85,6 @@ module mkDmaH2CPipe(DmaH2CPipe);
                         dataOutFifo.enq(wrValue);
                     end
                     else begin
-                        DmaCsrValue wrValue = firstData;
-                        DmaCsrAddr wrAddr = getCsrAddrFromCqDescriptor(descriptor);
                         $display("SIM INFO @ mkDmaH2CPipe: Invalid wrReq with Addr %h, data %h", wrAddr, wrValue);
                         illegalPcieReqCntReg <= illegalPcieReqCntReg + 1;
                     end
@@ -81,8 +92,8 @@ module mkDmaH2CPipe(DmaH2CPipe);
                 fromInteger(valueOf(MEM_READ_REQ)): begin
                     $display("SIM INFO @ mkDmaH2CPipe: MemRead Detect!");
                     let rdAddr = getCsrAddrFromCqDescriptor(descriptor);
-                    let req = CsrReadReq{
-                        startAddr : rdAddr,
+                    let req = DmaRequest{
+                        startAddr : zeroExtend(rdAddr),
                         length    : zeroExtend(csrBytes),
                         isWrite   : False
                     };

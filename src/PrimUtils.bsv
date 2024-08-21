@@ -413,7 +413,6 @@ function DmaMemAddr getAddrLowBits(DmaMemAddr addr, Bit#(TLog#(DMA_MEM_ADDR_WIDT
         61: temp = zeroExtend(DmaMemAddr'(addr[61-1:0]));
         62: temp = zeroExtend(DmaMemAddr'(addr[62-1:0]));
         63: temp = zeroExtend(DmaMemAddr'(addr[63-1:0]));
-        64: temp = zeroExtend(DmaMemAddr'(addr[64-1:0]));
         default: temp = 0;
     endcase
     return temp;
