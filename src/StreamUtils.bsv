@@ -424,7 +424,7 @@ module mkStreamHeaderRemove#(DataBytePtr headerLen)(StreamPipe);
     Reg#(DataStream) remainStreamReg  <- mkReg(getEmptyStream);
     Reg#(Bool)       hasLastRemainReg <- mkReg(False);
 
-    DataBitPtr headerBitLen = zeroExtend(headerLen) >> valueOf(BYTE_WIDTH_WIDTH);
+    DataBitPtr headerBitLen = zeroExtend(headerLen) << valueOf(BYTE_WIDTH_WIDTH);
 
     rule removeHeader;
         if (hasLastRemainReg) begin

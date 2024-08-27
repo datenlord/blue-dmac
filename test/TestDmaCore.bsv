@@ -1,6 +1,7 @@
 import GetPut::*;
 import Randomizable::*;
 import Vector::*;
+import Connectable::*;
 
 import SemiFifo::*;
 import PcieAxiStreamTypes::*;
@@ -22,7 +23,6 @@ typedef 2'b00 DEFAULT_TLP_SIZE_SETTING;
 typedef 4   CHUNK_TX_TEST_SETTING_NUM;
 typedef 6   CHUNK_RX_TEST_SETTING_NUM;
 
-(* doc = "testcase" *) 
 module mkChunkComputerTb(Empty);
 
     ChunkCompute dut <- mkChunkComputer(DMA_TX);
@@ -102,10 +102,11 @@ module mkChunkComputerTb(Empty);
 
 endmodule
 
+// Do not use any simple tests, run cocotb for whole verification
+
 typedef 60 SIMPLE_TEST_BYTELEN;
 typedef 'hABCDEF SIMPLE_TEST_ADDR;
 
-(* doc = "testcase" *) 
 module mkSimpleC2HWriteCoreTb(Empty);
     C2HWriteCore dut <- mkC2HWriteCore;
     Reg#(UInt#(32)) testCntReg <- mkReg(0);
@@ -215,5 +216,93 @@ module mkSimpleConvertStraddleAxisToDataStreamTb(Empty);
 endmodule
 
 
+module mkSimpleConvertDataStreamsToStraddleAxisTb(Empty);
+    ConvertDataStreamsToStraddleAxis dut <- mkConvertDataStreamsToStraddleAxis;
+    Reg#(UInt#(32)) testCntReg <- mkReg(0);
 
+    rule testInput if (testCntReg < 1);
+        let stream = generatePsuedoStream(fromInteger(valueOf(SIMPLE_TEST_BYTELEN)), True, True);
+        let sideBandByteEn = tuple2(4'b1111, 4'b1111);
+        dut.dataFifoIn[0].enq(stream);
+        dut.byteEnFifoIn[0].enq(sideBandByteEn);
+        dut.dataFifoIn[1].enq(stream);
+        dut.byteEnFifoIn[1].enq(sideBandByteEn);
+        testCntReg <= testCntReg + 1;
+    endrule
 
+    rule testOutput;
+        let axiStream = dut.axiStreamFifoOut.first;
+        dut.axiStreamFifoOut.deq;
+        $display("tData: %h", axiStream.tData);
+        $display("tKeep: %h", axiStream.tKeep);
+        PcieRequesterRequestSideBandFrame sideBand = unpack(axiStream.tUser);
+        $display("isSop: %d", sideBand.isSop.isSop);
+        if (axiStream.tLast) begin
+            $finish();
+        end
+    endrule
+endmodule
+
+module mkSimpleC2HReadCoreTb(Empty);
+    C2HReadCore dut <- mkC2HReadCore(0);
+    Reg#(UInt#(32)) testCntReg <- mkReg(0);
+
+    rule testInput if (testCntReg < 1);
+        let req = DmaRequest {
+            startAddr : fromInteger(valueOf(SIMPLE_TEST_ADDR)),
+            length    : fromInteger(valueOf(SIMPLE_TEST_BYTELEN)),
+            isWrite   : False
+        };
+        dut.rdReqFifoIn.enq(req);
+        testCntReg <= testCntReg + 1;
+    endrule
+
+    rule testOutput;
+        let stream = dut.tlpFifoOut.first;
+        dut.tlpFifoOut.deq;
+        $display(fshow(stream));
+        if (stream.isFirst) begin
+            let {firstByteEn, lastByteEn} = dut.tlpSideBandFifoOut.first;
+            dut.tlpSideBandFifoOut.deq;
+            $display("firstByteEn:%b, lastByteEn:%b", firstByteEn, lastByteEn);
+            PcieRequesterRequestDescriptor desc = unpack(truncate(stream.data));
+            $display("Descriptor Elements: dwordCnt:%d, address:%h", desc.dwordCnt, desc.address << 2);
+        end
+        if (stream.isLast) begin
+            $finish();
+        end
+    endrule
+endmodule
+
+module simpleWritePathTb(Empty);
+    C2HWriteCore c2hWriteCore <- mkC2HWriteCore;
+    ConvertDataStreamsToStraddleAxis adapter <- mkConvertDataStreamsToStraddleAxis;
+    mkConnection(c2hWriteCore.tlpFifoOut, adapter.dataFifoIn[0]);
+    mkConnection(c2hWriteCore.tlpSideBandFifoOut, adapter.byteEnFifoIn[0]);
+    Reg#(UInt#(32)) testCntReg <- mkReg(0);
+
+    rule testInput if (testCntReg < 1);
+        let req = DmaRequest {
+            startAddr : fromInteger(valueOf(SIMPLE_TEST_ADDR)),
+            length    : fromInteger(valueOf(SIMPLE_TEST_BYTELEN)),
+            isWrite   : True
+        };
+        let stream = generatePsuedoStream(fromInteger(valueOf(SIMPLE_TEST_BYTELEN)), True, True);
+        c2hWriteCore.wrReqFifoIn.enq(req);
+        c2hWriteCore.dataFifoIn.enq(stream);
+        testCntReg <= testCntReg + 1;
+    endrule
+
+    rule testOutput;
+        let axiStream = adapter.axiStreamFifoOut.first;
+        adapter.axiStreamFifoOut.deq;
+        $display("tData: %h", axiStream.tData);
+        $display("tKeep: %h", axiStream.tKeep);
+        PcieRequesterRequestSideBandFrame sideBand = unpack(axiStream.tUser);
+        $display("isSop: %d", sideBand.isSop.isSop);
+        if (axiStream.tLast) begin
+            $finish();
+        end
+    endrule
+
+endmodule

@@ -1,5 +1,6 @@
 import FIFOF::*;
 import Vector::*;
+import Connectable :: *;
 
 import SemiFifo::*;
 import BusConversion::*;
@@ -30,7 +31,7 @@ interface DmaController;
 endinterface
 
 // TODO : connect Configurator to other modules
-// (* synthesize *) //
+(* synthesize *)
 module mkDmaController(DmaController);
     Vector#(DMA_PATH_NUM, DmaC2HPipe) c2hPipes = newVector;
     for (DmaPathNo pathIdx = 0; pathIdx < fromInteger(valueOf(DMA_PATH_NUM)); pathIdx = pathIdx + 1) begin
@@ -51,33 +52,13 @@ module mkDmaController(DmaController);
         c2hDataInIfc[pathIdx]  = c2hPipes[pathIdx].wrDataFifoIn;
         c2hDataOutIfc[pathIdx] = c2hPipes[pathIdx].rdDataFifoOut;
         c2hReqInIfc[pathIdx]   = c2hPipes[pathIdx].reqFifoIn;
-        rule conncetC2HToAdapter;
-            if (c2hPipes[pathIdx].tlpDataFifoOut.notEmpty) begin
-                reqAdapter.dmaDataFifoIn[pathIdx].enq(c2hPipes[pathIdx].tlpDataFifoOut.first);
-                c2hPipes[pathIdx].tlpDataFifoOut.deq;
-            end
-            if (c2hPipes[pathIdx].tlpSideBandFifoOut.notEmpty) begin
-                reqAdapter.dmaSideBandFifoIn[pathIdx].enq(c2hPipes[pathIdx].tlpSideBandFifoOut.first);
-                c2hPipes[pathIdx].tlpSideBandFifoOut.deq;
-            end
-            if (reqAdapter.dmaDataFifoOut[pathIdx].notEmpty) begin
-                c2hPipes[pathIdx].tlpDataFifoIn.enq(reqAdapter.dmaDataFifoOut[pathIdx].first);
-                reqAdapter.dmaDataFifoOut[pathIdx].deq;
-            end
-        endrule
+        mkConnection(c2hPipes[pathIdx].tlpDataFifoOut, reqAdapter.dmaDataFifoIn[pathIdx]);
+        mkConnection(c2hPipes[pathIdx].tlpSideBandFifoOut, reqAdapter.dmaSideBandFifoIn[pathIdx]);
+        mkConnection(reqAdapter.dmaDataFifoOut[pathIdx], c2hPipes[pathIdx].tlpDataFifoIn);
     end
 
-    rule connectH2CToAdapter;
-        if (cmplAdapter.dmaDataFifoOut.notEmpty) begin
-            h2cPipe.tlpDataFifoIn.enq(cmplAdapter.dmaDataFifoOut.first);
-            cmplAdapter.dmaDataFifoOut.deq;
-        end
-        if (h2cPipe.tlpDataFifoOut.notEmpty) begin
-            cmplAdapter.dmaDataFifoIn.enq(h2cPipe.tlpDataFifoOut.first);
-            h2cPipe.tlpDataFifoOut.deq;
-        end
-
-    endrule
+    mkConnection(cmplAdapter.dmaDataFifoOut, h2cPipe.tlpDataFifoIn);
+    mkConnection(h2cPipe.tlpDataFifoOut, cmplAdapter.dmaDataFifoIn);
 
     // User Logic Ifc
     interface c2hDataFifoIn  = c2hDataInIfc;
@@ -132,7 +113,7 @@ typedef RawBusMaster#(DmaCsrValue) RawDmaCsrMaster;
 typedef RawBusSlave#(DmaCsrValue)  RawDmaCsrSlave;
 
 module mkFifoInToRawDmaDataSlave#(FifoIn#(DataStream) pipe)(RawDmaDataSlave);
-    Reg#(Bool) isFirstReg <- mkReg(False);
+    Reg#(Bool) isFirstReg <- mkReg(True);
     let rawBus <- mkFifoInToRawBusSlave(pipe);
     method Bool tReady = rawBus.ready;
     method Action tValid(
@@ -219,7 +200,7 @@ interface RawDmaController;
     (* prefix = "" *)        interface RawXilinxPcieIp       rawPcie;
 endinterface
 
-// (* synthesize *) //
+(* synthesize *)
 module mkRawDmaController(RawDmaController);
     DmaController dmac <- mkDmaController;
 

@@ -1,5 +1,6 @@
 import FIFOF::*;
 import GetPut::*;
+import Connectable::*;
 
 import SemiFifo::*;
 import PrimUtils::*;
@@ -28,7 +29,7 @@ interface DmaC2HPipe;
 endinterface
 
 // Single Path module
-// (* synthesize *) //
+(* synthesize *)
 module mkDmaC2HPipe#(DmaPathNo pathIdx)(DmaC2HPipe);
     C2HReadCore  readCore  <- mkC2HReadCore(pathIdx);
     C2HWriteCore writeCore <- mkC2HWriteCore;
@@ -37,6 +38,8 @@ module mkDmaC2HPipe#(DmaPathNo pathIdx)(DmaC2HPipe);
     FIFOF#(DmaRequest) reqInFifo    <- mkFIFOF;
     FIFOF#(DataStream) tlpOutFifo   <- mkFIFOF;
     FIFOF#(SideBandByteEn) tlpSideBandFifo <- mkFIFOF;
+
+    mkConnection(dataInFifo, writeCore.dataFifoIn);
 
     rule reqDeMux;
         let req = reqInFifo.first;
@@ -47,14 +50,8 @@ module mkDmaC2HPipe#(DmaPathNo pathIdx)(DmaC2HPipe);
         else begin
             readCore.rdReqFifoIn.enq(req);
         end
-        $display("SIM INFO @ mkDmaC2HPipe%d: New Request isWrite:%b startAddr:%h length:%h",
+        $display($time, "ns SIM INFO @ mkDmaC2HPipe%d: New Request isWrite:%b startAddr:%h length:%d",
                 pathIdx, pack(req.isWrite), req.startAddr, req.length);
-    endrule
-
-    rule dataPipe;
-        let stream = dataInFifo.first;
-        dataInFifo.deq;
-        writeCore.dataFifoIn.enq(stream);
     endrule
 
     rule tlpOutMux;
@@ -105,7 +102,7 @@ module mkC2HReadCore#(DmaPathNo pathIdx)(C2HReadCore);
     FIFOF#(SlotToken)      tagFifo        <- mkSizedFIFOF(valueOf(TAdd#(1, STREAM_HEADER_REMOVE_LATENCY)));      
     FIFOF#(Bool)           completedFifo  <- mkSizedFIFOF(valueOf(TAdd#(1, STREAM_HEADER_REMOVE_LATENCY)));      
 
-    StreamPipe     descRemove     <- mkStreamHeaderRemove(fromInteger(valueOf(DES_RC_DESCRIPTOR_WIDTH))); 
+    StreamPipe     descRemove     <- mkStreamHeaderRemove(fromInteger(valueOf(TDiv#(DES_RC_DESCRIPTOR_WIDTH, BYTE_WIDTH)))); 
     StreamPipe     streamReshape  <- mkStreamReshape;
     ChunkCompute   chunkSplitor   <- mkChunkComputer(DMA_RX);
     CompletionFifo#(SLOT_PER_PATH, DataStream)  cBuffer <- mkCompletionFifo(valueOf(MAX_STREAM_NUM_PER_COMPLETION));
@@ -115,7 +112,10 @@ module mkC2HReadCore#(DmaPathNo pathIdx)(C2HReadCore);
     // Pipeline stage 1: convert StraddleStream to DataStream, may cost 2 cycle for one StraddleStream
     rule convertStraddleToDataStream;
         let sdStream = tlpInFifo.first;
+        $display($time, "ns SIM INFO @ mkDmaC2HReadCore: recv new stream from straddle adapter, isDouble:%b", pack(sdStream.isDoubleFrame));
         let stream   = getEmptyStream;
+        SlotToken tag = 0;
+        Bool isCompleted = False;
         if (sdStream.isDoubleFrame) begin
             PcieTlpCtlIsSopPtr isSopPtr = 0;
             if (hasReadOnce) begin
@@ -132,8 +132,8 @@ module mkC2HReadCore#(DmaPathNo pathIdx)(C2HReadCore);
                 isFirst : sdStream.isFirst[isSopPtr],
                 isLast  : sdStream.isLast[isSopPtr]
             };
-            let tag = sdStream.tag[isSopPtr];
-            tagFifo.enq(tag);
+            tag = sdStream.tag[isSopPtr];
+            isCompleted = sdStream.isCompleted[isSopPtr];
         end
         else begin
             tlpInFifo.deq;
@@ -144,10 +144,13 @@ module mkC2HReadCore#(DmaPathNo pathIdx)(C2HReadCore);
                 isFirst : sdStream.isFirst[0],
                 isLast  : sdStream.isLast[0]
             };
-            let tag = sdStream.tag[0];
-            tagFifo.enq(tag);
+            tag = sdStream.tag[0];
+            isCompleted = sdStream.isCompleted[0]; 
         end
         descRemove.streamFifoIn.enq(stream);
+        tagFifo.enq(tag);
+        completedFifo.enq(isCompleted);
+        $display("parse from straddle", fshow(stream));
     endrule
 
     // Pipeline stage 2: remove the descriptor in the head of each TLP
@@ -157,6 +160,8 @@ module mkC2HReadCore#(DmaPathNo pathIdx)(C2HReadCore);
         let stream = descRemove.streamFifoOut.first;
         let isCompleted = completedFifo.first;
         let tag = tagFifo.first;
+        $display($time, "ns SIM INFO @ mkDmaC2HReadCore: recv new tlp tag%d, isCompleted:%b", tag, pack(isCompleted));
+        $display("desc remove output", fshow(stream));
         descRemove.streamFifoOut.deq;
         completedFifo.deq;
         tagFifo.deq;
@@ -173,6 +178,7 @@ module mkC2HReadCore#(DmaPathNo pathIdx)(C2HReadCore);
         let stream = cBuffer.drain.first;
         cBuffer.drain.deq;
         streamReshape.streamFifoIn.enq(stream);
+        $display("cbuf output", fshow(stream));
     endrule
 
     // Pipeline stage 1: split to req to MRRS chunks
@@ -214,6 +220,7 @@ module mkC2HReadCore#(DmaPathNo pathIdx)(C2HReadCore);
         let firstByteEn = convertDWordOffset2FirstByteEn(startAddrOffset);
         let lastByteEn  = convertDWordOffset2LastByteEn(endAddrOffset);
         tlpByteEnFifo.enq(tuple2(firstByteEn, lastByteEn));
+        $display($time, "ns SIM INFO @ mkDmaC2HReadCore: output new tlp, BE:%h/%h", firstByteEn, lastByteEn);
     endrule
 
     // User Logic Ifc
@@ -249,11 +256,13 @@ module mkC2HWriteCore(C2HWriteCore);
     // Pipeline stage 1: split the whole write request to chunks, latency = 3
     rule splitToChunks;
         let wrStream = dataInFifo.first;
+        $display($time, "ns SIM INFO @ mkDmaC2HWriteCore: get new writing stream");
         if (wrStream.isFirst && wrReqInFifo.notEmpty) begin
             wrReqInFifo.deq;
             chunkSplit.reqFifoIn.enq(wrReqInFifo.first);
             dataInFifo.deq;
             chunkSplit.dataFifoIn.enq(wrStream);
+            $display($time, "ns SIM INFO @ mkDmaC2HWriteCore: new write start, startAddr:%h, length:%d ", wrReqInFifo.first.startAddr, wrReqInFifo.first.length);
         end
         else if (!wrStream.isFirst) begin
             dataInFifo.deq;
@@ -288,6 +297,7 @@ module mkC2HWriteCore(C2HWriteCore);
             let sideBandByteEn = streamAlign.byteEnFifoOut.first;
             streamAlign.byteEnFifoOut.deq;
             byteEnOutFifo.enq(sideBandByteEn);
+            $display($time, "ns SIM INFO @ mkDmaC2HWriteCore: output new tlp, BE:%h/%h", tpl_1(sideBandByteEn), tpl_2(sideBandByteEn));
         end
         if (streamAlign.dataFifoOut.notEmpty) begin
             let stream = streamAlign.dataFifoOut.first;
