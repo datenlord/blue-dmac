@@ -77,7 +77,6 @@ module mkRandomStreamSize(StreamSize seed, StreamSizeBitPtr maxSizeBitPtr, Rando
     endmethod
 endmodule
 
-(* doc = "testcase" *) 
 module mkStreamSplitTb(Empty);
 
     StreamSplit dut <- mkStreamSplit;
@@ -179,7 +178,6 @@ module mkStreamSplitTb(Empty);
 
 endmodule
 
-(* doc = "testcase" *) 
 module mkStreamShiftTb(Empty);
     RandomStreamSize streamSizeRandomValue <- mkRandomStreamSize(fromInteger(valueOf(SEED_1)), fromInteger(valueOf(MAX_STREAM_SIZE_PTR)));
     Vector#(TAdd#(BYTE_EN_WIDTH, 1), FIFOF#(StreamSize)) setSizeFifo <- replicateM(mkSizedFIFOF(10));

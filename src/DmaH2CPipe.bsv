@@ -25,7 +25,7 @@ interface DmaH2CPipe;
     // TODO: Cfg Ifc
 endinterface
 
-// (* synthesize *) //
+(* synthesize *)
 module mkDmaH2CPipe(DmaH2CPipe);
     
     FIFOF#(DataStream)  tlpInFifo    <- mkFIFOF;

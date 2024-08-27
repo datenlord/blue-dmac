@@ -121,7 +121,7 @@ module mkPcieConfigurator(PcieConfigurator);
             endmethod
 
             method Action getMsiSignals(
-                Bool            msiEn,
+                PcieCfgMsiEn    msiEn,
                 Bool            msiSent,
                 Bool            msiFail,
                 PcieCfgMsiMmEn  msiMmEn,

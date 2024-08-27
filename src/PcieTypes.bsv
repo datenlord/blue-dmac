@@ -261,7 +261,7 @@ interface RawPcieCfgMsi;
     (* result = "tph_type" *)                    method PcieCfgMsiTphType               tphType;
     (* result = "tph_st_tag" *)                  method PcieCfgMsiTphStTag              tphStTag;
     (* prefix = "" *) method Action getMsiSignals(
-        (* port = "enable" *)       Bool            msiEn,
+        (* port = "enable" *)       PcieCfgMsiEn    msiEn,
         (* port = "sent" *)         Bool            msiSent,
         (* port = "fail" *)         Bool            msiFail,
         (* port = "mmenable" *)     PcieCfgMsiMmEn  msiMmEn,
@@ -414,7 +414,7 @@ typedef Bit#(PCIE_CFG_PHY_LINK_DOWN_WIDTH)          PcieCfgPhyLinkDown;
 typedef Bit#(PCIE_CFG_PHY_LINK_STATUS_WIDTH)        PcieCfgPhyLinkStatus;
 
 typedef 3 PCIE_CFG_NEGOTIATED_WIDTH_WIDTH;
-typedef 3 PCIE_CFG_CURRENT_SPEED_WIDTH;
+typedef 2 PCIE_CFG_CURRENT_SPEED_WIDTH;
 typedef 2 PCIE_CFG_MAX_PAYLOAD_WIDTH;
 typedef 3 PCIE_CFG_MAX_READ_REQ_WIDTH;
 typedef Bit#(PCIE_CFG_NEGOTIATED_WIDTH_WIDTH)       PcieCfgNegotiatedWidth;
