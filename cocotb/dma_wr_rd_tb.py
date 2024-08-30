@@ -2,6 +2,8 @@
 import itertools
 import logging
 import os
+import random
+import queue
 
 import cocotb_test.simulator
 import pytest
@@ -35,13 +37,16 @@ class TB(object):
         self.clock = dut.CLK
         self.resetn = dut.RST_N
         
+        self._bus_width = 512
+        self._bus_bytes = 64
+        
         # PCIe
         self.rc = RootComplex()
 
         cq_straddle = False
         cc_straddle = False
         rq_straddle = True
-        rc_straddle = True
+        rc_straddle = False
         rc_4tlp_straddle = False
 
         self.client_tag = bool(int(os.getenv("CLIENT_TAG", "1")))
@@ -293,59 +298,88 @@ class TB(object):
         desc.start_addr = startAddr
         desc.byte_cnt = length
         desc.is_write = isWrite
-        self.log.debug("Send a DMA Request, isWrite:%s, startAddr:%s", isWrite, startAddr)
         if channel == 0:
             await self.c2h_desc_source_0.send(desc)
         else:
             await self.c2h_desc_source_1.send(desc)
+    
+    async def send_data(self, channel, data):
+        assert len(data) <= self._bus_bytes
+        if channel == 0:
+            await self.c2h_write_source_0.send(data)
+        else:
+            await self.c2h_write_source_1.send(data)
         
-    async def run_single_write_once(self, channel, addr, length):
-        await self.c2h_write_source_0.send(b'ABCD')
-        self.log.debug("Send test write request!")
+    async def run_single_write_once(self, channel, addr, data):
+        length = len(data)
+        self.log.info("Conduct DMA single write: addr %d, length %d, char %c", addr, length, data[0])
         await self.send_desc(channel, addr, length, True)
+        await self.c2h_write_source_0.send(data)
     
     async def run_single_read_once(self, channel, addr, length):
+        self.log.info("Conduct DMA single read: addr %d, length %d", addr, length)
         await self.send_desc(channel, addr, length, False)
-
-# no input now
-@cocotb.test(timeout_time=6000, timeout_unit="ns")
-async def run_test_write(dut):
+        data = await self.c2h_read_sink_0.read()
+        data = bytes(''.join([chr(item) for item in data]), encoding='UTF-8')
+        self.log.info("Read data from RootComplex successfully, recv length %d, req length %d", len(data), length)
+        return data
+            
+@cocotb.test(timeout_time=100000000, timeout_unit="ns")
+async def random_write_test(dut):
 
     tb = TB(dut)
     await tb.gen_reset()
-
+    
     await tb.rc.enumerate()
-
     dev = tb.rc.find_device(tb.dev.functions[0].pcie_id)
+    
     await dev.enable_device()
     await dev.set_master()
-
-    mem = tb.rc.mem_pool.alloc_region(16*1024*1024)
+    
+    mem = tb.rc.mem_pool.alloc_region(1024*1024)
     mem_base = mem.get_absolute_address(0)
     
-    await tb.run_single_write_once(0, mem_base, 4)
-
-    await Timer(500, units='ns')
-
-    await tb.run_single_read_once(0, mem_base, 4)
-    frame = await tb.c2h_read_sink_0.recv()
-    print(frame)
-    await RisingEdge(tb.clock)
+    dma_channel = 0
+    for _ in range(10):
+        addr_offset = random.randint(0, 8192)
+        length = random.randint(0, 8192)
+        char = bytes(random.choice('abcdefghijklmnopqrstuvwxyz'), encoding="UTF-8")
+        addr = addr_offset + mem_base
+        data = char * length
+        await tb.run_single_write_once(dma_channel, addr, data)
+        await Timer(100+length, units='ns')
+        assert mem[addr:addr+length] == char * length
+        await RisingEdge(tb.clock)
     
-
-if cocotb.SIM_NAME:
-
-    factory = TestFactory(run_test_write)
-    factory.generate_tests()
-
-
-# cocotb-test
+@cocotb.test(timeout_time=10000000, timeout_unit="ns")   
+async def random_read_test(dut):
+    tb = TB(dut)
+    await tb.gen_reset()
+    
+    await tb.rc.enumerate()
+    dev = tb.rc.find_device(tb.dev.functions[0].pcie_id)
+    
+    await dev.enable_device()
+    await dev.set_master()
+    
+    mem = tb.rc.mem_pool.alloc_region(1024*1024)
+    mem_base = mem.get_absolute_address(0)
+    
+    dma_channel = 0
+    for _ in range(100):
+        addr_offset = random.randint(0, 8192)
+        addr = addr_offset + mem_base
+        length = random.randint(0, 8192)
+        char = bytes(random.choice('abcdefghijklmnopqrstuvwxyz'), encoding="UTF-8")
+        mem[addr:addr+length] = char * length
+        data = await tb.run_single_read_once(dma_channel, addr, length)
+        assert data == char * length
 
 tests_dir = os.path.dirname(__file__)
 rtl_dir = tests_dir
 
 
-def test_dma_wr():
+def test_dma():
     dut = "mkRawDmaController"
     module = os.path.splitext(os.path.basename(__file__))[0]
     toplevel = dut
@@ -366,4 +400,4 @@ def test_dma_wr():
     )
     
 if __name__ == "__main__":
-    test_dma_wr()
+    test_dma()
