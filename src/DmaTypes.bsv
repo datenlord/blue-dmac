@@ -41,6 +41,7 @@ typedef Bit#(TAdd#(1, TLog#(DWORD_EN_WIDTH))) DataDwordPtr;
 
 typedef Bit#(TAdd#(1, TLog#(DWORD_BYTES)))    DWordBytePtr;
 typedef Bit#(BYTE_DWORD_SHIFT_WIDTH)          ByteModDWord;
+typedef 2'b11                                 MaxByteModDword;
 
 typedef struct {
     DmaMemAddr startAddr;
@@ -52,6 +53,7 @@ typedef struct {
     DmaMemAddr startAddr;
     DmaMemAddr endAddr;
     DmaMemAddr length;
+    Tag        tag;
 } DmaExtendRequest deriving(Bits, Bounded, Eq);
 
 typedef enum {

@@ -245,7 +245,7 @@ module mkConvertDataStreamsToStraddleAxis(ConvertDataStreamsToStraddleAxis);
                 shiftB.streamFifoOut.deq;
             end
         end
-        // In streamB sendging epoch, waiting streamB until isLast
+        // In streamB sending epoch, waiting streamB until isLast
         else if (isInStreamBReg) begin
             let {oriStreamB, shiftStreamB} = shiftB.streamFifoOut.first;
             sendingStream = isInShiftBReg ? shiftStreamB : oriStreamB;
@@ -372,6 +372,10 @@ module mkConvertDataStreamsToStraddleAxis(ConvertDataStreamsToStraddleAxis);
                 tUser  : pack(sideBand)
             };
             axiStreamOutFifo.enq(axiStream);
+            // $display($time, "ns SIM INFO @ mkDataStreamToAxis: tx a AXIS frame, isSop:%h, isEop:%d, isEopPtr:%d, tData:%h", isSop.isSop, isEop.isEop, isEop.isEopPtrs[0], axiStream.tData);
+            if (isEop.isEop == 1 && isEop.isEopPtrs[0] == 0) begin
+                $display($time, "ns SIM Warning @ mkDataStreamToAxis: stream byteEn %b", sendingStream.byteEn);
+            end
         end
     endrule
 
@@ -421,6 +425,7 @@ module mkConvertStraddleAxisToDataStream(ConvertStraddleAxisToDataStream);
         PcieRequesterCompleteSideBandFrame sideBand = unpack(axiStream.tUser);
         let isEop = sideBand.isEop;
         let isSop = sideBand.isSop;
+        $display($time, "ns SIM INFO @ mkAxisToDataStream: rx a AXIS frame, isSop:%h, isEop:%d, tData:%h", isSop.isSop, isEop.isEop, axiStream.tData);
         for (DmaPathNo pathIdx = 0; pathIdx < fromInteger(valueOf(DMA_PATH_NUM)); pathIdx = pathIdx + 1) begin
             let sdStream = getEmptyStraddleStream;
             // 2 New TLP

@@ -77,6 +77,7 @@ module mkRandomStreamSize(StreamSize seed, StreamSizeBitPtr maxSizeBitPtr, Rando
     endmethod
 endmodule
 
+(* doc = "testcase" *) 
 module mkStreamSplitTb(Empty);
 
     StreamSplit dut <- mkStreamSplit;

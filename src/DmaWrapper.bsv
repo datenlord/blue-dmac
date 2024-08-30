@@ -115,6 +115,7 @@ typedef RawBusSlave#(DmaCsrValue)  RawDmaCsrSlave;
 module mkFifoInToRawDmaDataSlave#(FifoIn#(DataStream) pipe)(RawDmaDataSlave);
     Reg#(Bool) isFirstReg <- mkReg(True);
     let rawBus <- mkFifoInToRawBusSlave(pipe);
+
     method Bool tReady = rawBus.ready;
     method Action tValid(
         Bool valid, 
@@ -123,7 +124,7 @@ module mkFifoInToRawDmaDataSlave#(FifoIn#(DataStream) pipe)(RawDmaDataSlave);
         Bool tLast, 
         Bit#(DMA_DATA_USER_WIDTH) tUser
     );
-        if (valid) begin
+        if (valid && rawBus.ready) begin
             if (tLast) begin
                 isFirstReg <= True;
             end
