@@ -24,8 +24,8 @@ interface DmaC2HPipe;
     interface FifoOut#(DataStream)     tlpDataFifoOut;
     interface FifoOut#(SideBandByteEn) tlpSideBandFifoOut;
     interface FifoIn#(StraddleStream)  tlpDataFifoIn;
-    // TODO: Cfg Ifc
-    // interface Put#(DmaConfig)   configuration;
+    // TODO: CSR Ifc
+    interface Put#(TlpSizeCfg)   tlpSizeCfg;
     // interface Client#(DmaCsrValue, DmaCsrValue) statusReg;
 endinterface
 
@@ -33,7 +33,9 @@ endinterface
 (* synthesize *)
 module mkDmaC2HPipe#(DmaPathNo pathIdx)(DmaC2HPipe);
     C2HReadCore  readCore  <- mkC2HReadCore(pathIdx);
-    C2HWriteCore writeCore <- mkC2HWriteCore;
+    C2HWriteCore writeCore <- mkC2HWriteCore(pathIdx);
+
+    Reg#(Bool) isInitDoneReg <- mkReg(False);
 
     FIFOF#(DataStream) dataInFifo   <- mkFIFOF;
     FIFOF#(DmaRequest) reqInFifo    <- mkFIFOF;
@@ -42,7 +44,7 @@ module mkDmaC2HPipe#(DmaPathNo pathIdx)(DmaC2HPipe);
 
     mkConnection(dataInFifo, writeCore.dataFifoIn);
 
-    rule reqDeMux;
+    rule reqDeMux if (isInitDoneReg);
         let req = reqInFifo.first;
         reqInFifo.deq;
         if (req.isWrite) begin
@@ -81,8 +83,14 @@ module mkDmaC2HPipe#(DmaPathNo pathIdx)(DmaC2HPipe);
     interface tlpDataFifoOut      = convertFifoToFifoOut(tlpOutFifo);
     interface tlpSideBandFifoOut  = convertFifoToFifoOut(tlpSideBandFifo);
     interface tlpDataFifoIn       = readCore.tlpFifoIn;
-    // TODO: Cfg Ifc
-
+    // TODO: CSR Ifc
+    interface Put tlpSizeCfg;
+        method Action put(sizeCfg);
+            writeCore.maxPayloadSize.put(tuple2(sizeCfg.mps, sizeCfg.mpsWidth));
+            readCore.maxReadReqSize.put(tuple2(sizeCfg.mrrs, sizeCfg.mrrsWidth));
+            isInitDoneReg <= True;
+        endmethod
+    endinterface
 endmodule
 
 interface C2HReadCore;
@@ -93,6 +101,8 @@ interface C2HReadCore;
     interface FifoIn#(StraddleStream)  tlpFifoIn;
     interface FifoOut#(DataStream)     tlpFifoOut;
     interface FifoOut#(SideBandByteEn) tlpSideBandFifoOut;
+
+    interface Put#(Tuple2#(TlpPayloadSize, TlpPayloadSizeWidth)) maxReadReqSize;
 endinterface
 
 // Total Latency(Tlp Output): 1 + 2 + 1 + 1 = 5
@@ -103,9 +113,9 @@ module mkC2HReadCore#(DmaPathNo pathIdx)(C2HReadCore);
     FIFOF#(DataStream)     tlpOutFifo     <- mkFIFOF;
     FIFOF#(SideBandByteEn) tlpByteEnFifo  <- mkFIFOF;
 
-    FIFOF#(SlotToken)      tagFifo        <- mkSizedFIFOF(valueOf(TAdd#(1, STREAM_HEADER_REMOVE_LATENCY)));      
-    FIFOF#(Bool)           completedFifo  <- mkSizedFIFOF(valueOf(TAdd#(1, STREAM_HEADER_REMOVE_LATENCY)));   
-    FIFOF#(DmaMemAddr)     expectTlpCntFifo <-mkSizedFIFOF(valueOf(SLOT_PER_PATH));
+    FIFOF#(SlotToken)      tagFifo         <- mkSizedFIFOF(valueOf(TAdd#(1, STREAM_HEADER_REMOVE_LATENCY)));      
+    FIFOF#(Bool)           completedFifo   <- mkSizedFIFOF(valueOf(TAdd#(1, STREAM_HEADER_REMOVE_LATENCY)));   
+    FIFOF#(DmaRequest)     reqInflightFifo <- mkSizedFIFOF(valueOf(SLOT_PER_PATH));
 
     StreamPipe     descRemove     <- mkStreamHeaderRemove(fromInteger(valueOf(TDiv#(DES_RC_DESCRIPTOR_WIDTH, BYTE_WIDTH)))); 
     StreamPipe     dwRemove       <- mkStreamRemoveFromDW;
@@ -117,11 +127,11 @@ module mkC2HReadCore#(DmaPathNo pathIdx)(C2HReadCore);
     RqDescriptorGenerator rqDescGenerator <- mkRqDescriptorGenerator(False);
     
     Reg#(Bool) hasReadOnce <- mkReg(False);
-    Reg#(DmaMemAddr) recvTlpCntReg <- mkReg(0);
+    // Reg#(DmaMemAddr) recvTlpCntReg <- mkReg(0);
     Reg#(DmaMemAddr) recvBytesReg  <- mkReg(0);
     Vector#(SLOT_PER_PATH, Reg#(DmaMemAddr)) chunkBytesRegs <- replicateM(mkReg(0));
 
-    mkConnection(chunkSplitor.chunkCntFifoOut, expectTlpCntFifo);
+    // mkConnection(chunkSplitor.chunkCntFifoOut, expectTlpCntFifo);
     mkConnection(reshapeStrad.streamFifoOut, descRemove.streamFifoIn);
     mkConnection(descRemove.streamFifoOut, dwRemove.streamFifoIn);
 
@@ -164,7 +174,7 @@ module mkC2HReadCore#(DmaPathNo pathIdx)(C2HReadCore);
         end
         stream.byteEn = stream.byteEn;
         reshapeStrad.streamFifoIn.enq(stream);
-        $display($time, "ns SIM INFO @ mkDmaC2HReadCore: recv new stream from straddle adapter, tag: %d, isCompleted:%b" ,tag, isCompleted, fshow(stream));
+        // $display($time, "ns SIM INFO @ mkDmaC2HReadCore%d: recv new stream from straddle adapter, tag: %d, isCompleted:%b" , pathIdx, tag, isCompleted, fshow(stream));
         if (stream.isFirst) begin
             tagFifo.enq(tag);
             completedFifo.enq(isCompleted);
@@ -190,11 +200,11 @@ module mkC2HReadCore#(DmaPathNo pathIdx)(C2HReadCore);
         cBuffer.append.enq(tuple2(tag, stream));
         if (stream.isLast) begin
             cBuffer.complete.put(tag);
-            $display($time, "ns SIM INFO @ mkDmaC2HReadCore: a chunk is completed in cBuffer, tag: %d, recv bytes: %d", tag, chunkBytes);
+            $display($time, "ns SIM INFO @ mkDmaC2HReadCore%d: a chunk is completed in cBuffer, tag: %d, recv bytes: %d", pathIdx, tag, chunkBytes);
             chunkBytes = 0;
         end
         chunkBytesRegs[tag] <= chunkBytes;
-        $display("tag%d", tag, fshow(stream));
+        // $display("tag%d", tag, fshow(stream));
     endrule
 
     // Pipeline stage 4: there may be a bubble ibetween the first and last DataStream of cBUffer drain output
@@ -213,33 +223,30 @@ module mkC2HReadCore#(DmaPathNo pathIdx)(C2HReadCore);
         let byteInStream = convertByteEn2BytePtr(stream.byteEn);
         let recvBytesCnt = recvBytesReg + zeroExtend(byteInStream);
         reshapeRcb.streamFifoOut.deq;
-        let recvTlpCnt = recvTlpCntReg;
-        if (stream.isFirst) begin
-            if (recvTlpCnt > 0) begin
-                stream.isFirst = False;
-            end
-            recvTlpCnt = recvTlpCntReg + 1;
-        end
+        // let recvTlpCnt = recvTlpCntReg;
+        // if (stream.isFirst) begin
+        //     if (recvTlpCnt > 0) begin
+        //         stream.isFirst = False;
+        //     end
+        //     recvTlpCnt = recvTlpCntReg + 1;
+        // end
         if (stream.isLast) begin
-            if (expectTlpCntFifo.first == recvTlpCnt) begin
-                recvTlpCnt = 0;
-                expectTlpCntFifo.deq;
-                $display($time, "ns SIM INFO @ mkDmaC2HReadCore: a read request is done, total tlps counts : %5d, total recvd bytes: %d", expectTlpCntFifo.first, recvBytesCnt);
+            if (reqInflightFifo.first.length == recvBytesCnt) begin
+                // recvTlpCnt = 0;
+                reqInflightFifo.deq;
+                $display($time, "ns SIM INFO @ mkDmaC2HReadCore%d: a read request is done, total recvd bytes: %d", pathIdx, recvBytesCnt);
                 recvBytesCnt = 0;
             end 
             else begin
                 stream.isLast = False;
+                $display($time, "ns SIM DEBUG @ mkDmaC2HReadCore%d, expect bytes %drecv bytes %d", pathIdx, reqInflightFifo.first.length, recvBytesCnt);
             end
         end
-        recvTlpCntReg <= recvTlpCnt;
+        // recvTlpCntReg <= recvTlpCnt;
         recvBytesReg <= recvBytesCnt;
         reshapeMrrs.streamFifoIn.enq(stream);
     endrule
 
-    // rule log;
-    //     let stream = dwRemove.streamFifoOut.first;
-    //     $display("dwRemove output stream", fshow(stream));
-    // endrule
     // Pipeline stage 1: split to req to MRRS chunks
     rule reqSplit;
         let req = reqInFifo.first;
@@ -251,6 +258,7 @@ module mkC2HReadCore#(DmaPathNo pathIdx)(C2HReadCore);
             tag       : 0
         };
         chunkSplitor.dmaRequestFifoIn.enq(exReq);
+        reqInflightFifo.enq(req);
     endrule
 
     // Pipeline stage 2: generate read descriptor
@@ -262,10 +270,10 @@ module mkC2HReadCore#(DmaPathNo pathIdx)(C2HReadCore);
                 startAddr:  req.startAddr,
                 endAddr  :  req.startAddr + req.length - 1,
                 length   :  req.length,
-                tag      :  zeroExtend(token) | (zeroExtend(pathIdx) << (valueOf(DES_NONEXTENDED_TAG_WIDTH)-1))
+                tag      :  convertSlotTokenToTag(token, pathIdx)
             };
         rqDescGenerator.exReqFifoIn.enq(exReq);
-        $display($time, "ns SIM INFO @ mkDmaC2HReadCore: tx a new read chunk, tag:%d, addr:%d, length:%d",  exReq.tag, req.startAddr, req.length);
+        $display($time, "ns SIM INFO @ mkDmaC2HReadCore%d: tx a new read chunk, tag:%d, addr:%d, length:%d", pathIdx, exReq.tag, req.startAddr, req.length);
     endrule
 
     // Pipeline stage 3: generate Tlp to PCIe Adapter
@@ -278,7 +286,7 @@ module mkC2HReadCore#(DmaPathNo pathIdx)(C2HReadCore);
         stream.isLast  = True;
         tlpOutFifo.enq(stream);
         tlpByteEnFifo.enq(sideBandByteEn);
-        $display($time, "ns SIM INFO @ mkDmaC2HReadCore: output new tlp, BE:%h/%h", tpl_1(sideBandByteEn), tpl_2(sideBandByteEn));
+        // $display($time, "ns SIM INFO @ mkDmaC2HReadCore: output new tlp, BE:%h/%h", tpl_1(sideBandByteEn), tpl_2(sideBandByteEn));
     endrule
 
     // User Logic Ifc
@@ -288,6 +296,12 @@ module mkC2HReadCore#(DmaPathNo pathIdx)(C2HReadCore);
     interface tlpFifoIn   = convertFifoToFifoIn(tlpInFifo);
     interface tlpFifoOut  = convertFifoToFifoOut(tlpOutFifo);
     interface tlpSideBandFifoOut = convertFifoToFifoOut(tlpByteEnFifo);
+    // Cfg Ifc
+    interface Put maxReadReqSize;
+        method Action put(Tuple2#(TlpPayloadSize, TlpPayloadSizeWidth) mrrsCfg);
+            chunkSplitor.maxReadReqSize.put(mrrsCfg);
+        endmethod
+    endinterface
 endmodule
 
 // Core path of a single stream, from (DataStream, DmaRequest) ==> (DataStream, SideBandByteEn)
@@ -299,16 +313,18 @@ interface C2HWriteCore;
     // PCIe IP Ifc
     interface FifoOut#(DataStream)     tlpFifoOut;
     interface FifoOut#(SideBandByteEn) tlpSideBandFifoOut;
+    
+    interface Put#(Tuple2#(TlpPayloadSize, TlpPayloadSizeWidth)) maxPayloadSize;
 endinterface
 
 // Total Latency: 1 + 3 + 2 + 1 = 7
-module mkC2HWriteCore(C2HWriteCore);
+module mkC2HWriteCore#(DmaPathNo pathIdx)(C2HWriteCore);
     FIFOF#(DataStream)     dataInFifo  <- mkFIFOF;
     FIFOF#(DmaRequest)     wrReqInFifo <- mkFIFOF;
     FIFOF#(DataStream)     dataOutFifo <- mkFIFOF;
     FIFOF#(SideBandByteEn) byteEnOutFifo <- mkFIFOF;
 
-    Reg#(Tag)  tagReg <- mkReg(0);
+    Reg#(SlotToken)  tagReg <- mkReg(0);
 
     ChunkSplit chunkSplit <- mkChunkSplit(DMA_TX);
     StreamShiftAlignToDw streamAlign <- mkStreamShiftAlignToDw(fromInteger(valueOf(TDiv#(DES_RQ_DESCRIPTOR_WIDTH, BYTE_WIDTH))));
@@ -346,23 +362,23 @@ module mkC2HWriteCore(C2HWriteCore);
                 startAddr:  chunkReq.startAddr,
                 endAddr  :  chunkReq.startAddr + chunkReq.length - 1,
                 length   :  chunkReq.length,
-                tag      :  tagReg
+                tag      :  convertSlotTokenToTag(tagReg, pathIdx)
             };
             tagReg <= tagReg + 1;
             let startAddrOffset = byteModDWord(exReq.startAddr);
             streamAlign.setAlignMode(unpack(startAddrOffset));
             rqDescGenerator.exReqFifoIn.enq(exReq);
-            $display($time, "ns SIM INFO @ mkDmaC2HWriteCore: tx a new write chunk, tag:%d, addr:%d, length:%d",  tagReg, chunkReq.startAddr, chunkReq.length);
+            $display($time, "ns SIM INFO @ mkDmaC2HWriteCore%d: tx a new write chunk, tag:%d, addr:%d, length:%d", pathIdx, convertSlotTokenToTag(tagReg, pathIdx), chunkReq.startAddr, chunkReq.length);
         end
         if (chunkSplit.chunkDataFifoOut.notEmpty) begin
             let chunkDataStream = chunkSplit.chunkDataFifoOut.first;
             chunkSplit.chunkDataFifoOut.deq;
             streamAlign.dataFifoIn.enq(chunkDataStream);
             if (chunkDataStream.isLast && chunkDataStream.isFirst) begin
-                $display($time, "ns SIM INFO @ mkDmaC2HWriteCore: tx write chunk end  , tag:%d", tagReg);
+                $display($time, "ns SIM INFO @ mkDmaC2HWriteCore%d: tx write chunk end  , tag:%d", pathIdx, convertSlotTokenToTag(tagReg, pathIdx));
             end
             else if (chunkDataStream.isLast) begin
-                $display($time, "ns SIM INFO @ mkDmaC2HWriteCore: tx write chunk end  , tag:%d", tagReg - 1);
+                $display($time, "ns SIM INFO @ mkDmaC2HWriteCore%d: tx write chunk end  , tag:%d", pathIdx, convertSlotTokenToTag(tagReg-1, pathIdx));
             end
         end
     endrule
@@ -379,14 +395,22 @@ module mkC2HWriteCore(C2HWriteCore);
             stream.data = stream.data | descStream.data;
             stream.byteEn = stream.byteEn | descStream.byteEn;
             byteEnOutFifo.enq(sideBandByteEn);
-            $display($time, "ns SIM INFO @ mkDmaC2HWriteCore: tx a new tlp, BE:%b/%b", tpl_1(sideBandByteEn), tpl_2(sideBandByteEn));
+            // $display($time, "ns SIM INFO @ mkDmaC2HWriteCore%d: tx a new tlp, BE:%b/%b", pathIdx, tpl_1(sideBandByteEn), tpl_2(sideBandByteEn));
         end
         dataOutFifo.enq(stream);
         // $display($time, "ns SIM INFO @ mkDmaC2HWriteCore: tlp stream", fshow(stream));
     endrule
 
+    // User Logic Ifc
     interface dataFifoIn         = convertFifoToFifoIn(dataInFifo);
     interface wrReqFifoIn        = convertFifoToFifoIn(wrReqInFifo);
+    // PCIe Adapter Ifc
     interface tlpFifoOut         = convertFifoToFifoOut(dataOutFifo);
     interface tlpSideBandFifoOut = convertFifoToFifoOut(byteEnOutFifo);
+    // Cfg Ifc
+    interface Put maxPayloadSize;
+        method Action put(Tuple2#(TlpPayloadSize, TlpPayloadSizeWidth) mpsCfg);
+            chunkSplit.maxPayloadSize.put(mpsCfg);
+        endmethod
+    endinterface
 endmodule

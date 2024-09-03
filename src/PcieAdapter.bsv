@@ -194,6 +194,11 @@ module mkConvertDataStreamsToStraddleAxis(ConvertDataStreamsToStraddleAxis);
         return !unpack(sdStream.byteEn[valueOf(STRADDLE_THRESH_BYTE_WIDTH)]);
     endfunction
 
+    function Bool isValidShiftStream(DataStream shiftStream);
+        Bool valid = !unpack(shiftStream.byteEn[0]) && unpack(shiftStream.byteEn[valueOf(STRADDLE_THRESH_BYTE_WIDTH)]);
+        return valid;
+    endfunction
+
     function PcieRequesterRequestSideBandFrame genRQSideBand(
         PcieTlpCtlIsEopCommon isEop, PcieTlpCtlIsSopCommon isSop, SideBandByteEn byteEnA, SideBandByteEn byteEnB
         );
@@ -241,8 +246,10 @@ module mkConvertDataStreamsToStraddleAxis(ConvertDataStreamsToStraddleAxis);
             isSendingA = True;
             if (shiftB.streamFifoOut.notEmpty && sendingStream.isLast && hasStraddleSpace(sendingStream)) begin
                 let {oriStreamB, shiftStreamB} = shiftB.streamFifoOut.first;
-                pendingStream = shiftStreamB;
                 shiftB.streamFifoOut.deq;
+                if (isValidShiftStream(shiftStreamB)) begin
+                    pendingStream = shiftStreamB;
+                end
             end
         end
         // In streamB sending epoch, waiting streamB until isLast
@@ -253,8 +260,10 @@ module mkConvertDataStreamsToStraddleAxis(ConvertDataStreamsToStraddleAxis);
             isSendingA = False;
             if (shiftA.streamFifoOut.notEmpty && sendingStream.isLast && hasStraddleSpace(sendingStream)) begin
                 let {oriStreamA, shiftStreamA} = shiftA.streamFifoOut.first;
-                pendingStream = shiftStreamA;
                 shiftA.streamFifoOut.deq;
+                if (isValidShiftStream(shiftStreamA)) begin
+                    pendingStream = shiftStreamA;
+                end
             end
         end
         // In Idle, choose one stream to enter new epoch
@@ -268,8 +277,10 @@ module mkConvertDataStreamsToStraddleAxis(ConvertDataStreamsToStraddleAxis);
                     isSendingA = True;
                     if (sendingStream.isLast && hasStraddleSpace(sendingStream)) begin
                         let {oriStreamB, shiftStreamB} = shiftB.streamFifoOut.first;
-                        pendingStream = shiftStreamB;
                         shiftB.streamFifoOut.deq;
+                        if (isValidShiftStream(shiftStreamB)) begin
+                            pendingStream = shiftStreamB;
+                        end
                     end
                 end
                 else begin
@@ -279,8 +290,10 @@ module mkConvertDataStreamsToStraddleAxis(ConvertDataStreamsToStraddleAxis);
                     isSendingA = False;
                     if (sendingStream.isLast && hasStraddleSpace(sendingStream)) begin
                         let {oriStreamA, shiftStreamA} = shiftA.streamFifoOut.first;
-                        pendingStream = shiftStreamA;
                         shiftA.streamFifoOut.deq;
+                        if (isValidShiftStream(shiftStreamA)) begin
+                            pendingStream = shiftStreamA;
+                        end
                     end
                 end
             end
@@ -305,33 +318,54 @@ module mkConvertDataStreamsToStraddleAxis(ConvertDataStreamsToStraddleAxis);
 
         if (!isByteEnZero(sendingStream.byteEn)) begin
             // Change the registers and generate PcieAxiStream
-            let sideBandByteEnA = tuple2(0, 0);
-            let sideBandByteEnB = tuple2(0, 0);
+            let sideBandByteEn0 = tuple2(0, 0);
+            let sideBandByteEn1 = tuple2(0, 0);
             if (isSendingA) begin
                 isInStreamAReg <= !sendingStream.isLast;
                 isInShiftAReg  <= sendingStream.isLast ? False : isInShiftAReg;
-                if (sendingStream.isFirst) begin
-                    sideBandByteEnA = byteEnAFifo.first;
+                // Only A sop
+                if (sendingStream.isFirst && !pendingStream.isFirst) begin
+                    sideBandByteEn0 = byteEnAFifo.first;
                     byteEnAFifo.deq;
                 end
-                if (sendingStream.isLast && hasStraddleSpace(sendingStream) && !isByteEnZero(pendingStream.byteEn)) begin
+                // A sop and B sop
+                else if (sendingStream.isFirst && hasStraddleSpace(sendingStream) && pendingStream.isFirst) begin
                     isInStreamBReg <= !pendingStream.isLast;
                     isInShiftBReg  <= !pendingStream.isLast;
-                    sideBandByteEnB = byteEnBFifo.first;
+                    sideBandByteEn0 = byteEnAFifo.first;
+                    byteEnAFifo.deq;
+                    sideBandByteEn1 = byteEnBFifo.first;
+                    byteEnBFifo.deq;
+                end
+                // Only B sop
+                else if (sendingStream.isLast && hasStraddleSpace(sendingStream) && pendingStream.isFirst) begin
+                    isInStreamBReg <= !pendingStream.isLast;
+                    isInShiftBReg  <= !pendingStream.isLast;
+                    sideBandByteEn0 = byteEnBFifo.first;
                     byteEnBFifo.deq;
                 end
             end 
             else begin
                 isInStreamBReg <= !sendingStream.isLast;
                 isInShiftBReg  <= sendingStream.isLast ? False : isInShiftBReg;
-                if (sendingStream.isFirst) begin
-                    sideBandByteEnB = byteEnBFifo.first;
+                // Only B sop
+                if (sendingStream.isFirst && !pendingStream.isFirst) begin
+                    sideBandByteEn0 = byteEnBFifo.first;
                     byteEnBFifo.deq;
                 end
-                if (sendingStream.isLast && hasStraddleSpace(sendingStream) && !isByteEnZero(pendingStream.byteEn)) begin
+                // B sop and A sop
+                else if (sendingStream.isFirst && hasStraddleSpace(sendingStream) && pendingStream.isFirst) begin
                     isInStreamAReg <= !pendingStream.isLast;
                     isInShiftAReg  <= !pendingStream.isLast;
-                    sideBandByteEnA = byteEnAFifo.first;
+                    sideBandByteEn0 = byteEnBFifo.first;
+                    byteEnBFifo.deq;
+                    sideBandByteEn1 = byteEnAFifo.first;
+                    byteEnAFifo.deq;
+                end
+                else if (sendingStream.isLast && hasStraddleSpace(sendingStream) && pendingStream.isFirst) begin
+                    isInStreamAReg <= !pendingStream.isLast;
+                    isInShiftAReg  <= !pendingStream.isLast;
+                    sideBandByteEn0 = byteEnAFifo.first;
                     byteEnAFifo.deq;
                 end
             end
@@ -350,21 +384,25 @@ module mkConvertDataStreamsToStraddleAxis(ConvertDataStreamsToStraddleAxis);
                 isSop.isSopPtrs[0] = fromInteger(valueOf(ISSOP_LANE_0));
                 isSop.isSopPtrs[1] = fromInteger(valueOf(ISSOP_LANE_32));
             end
-            else if (sendingStream.isFirst || pendingStream.isFirst) begin
+            else if (sendingStream.isFirst) begin
                 isSop.isSop = fromInteger(valueOf(SINGLE_TLP_IN_THIS_BEAT));
                 isSop.isSopPtrs[0] = fromInteger(valueOf(ISSOP_LANE_0));
             end
-            if (pendingStream.isLast && !isByteEnZero(pendingStream.byteEn)) begin
+            else if (pendingStream.isFirst) begin
+                isSop.isSop = fromInteger(valueOf(SINGLE_TLP_IN_THIS_BEAT));
+                isSop.isSopPtrs[0] = fromInteger(valueOf(ISSOP_LANE_32));
+            end
+            if (pendingStream.isLast && isValidShiftStream(pendingStream)) begin
                 isEop.isEop = fromInteger(valueOf(DOUBLE_TLP_IN_THIS_BEAT));
                 isEop.isEopPtrs[0] = truncate(convertByteEn2DwordPtr(sendingStream.byteEn));
-                isEop.isEopPtrs[1] = fromInteger(valueOf(STRADDLE_THRESH_DWORD_WIDTH)) + truncate(convertByteEn2DwordPtr(pendingStream.byteEn));
+                isEop.isEopPtrs[1] = truncate(convertByteEn2DwordPtr(pendingStream.byteEn));
             end
             else if (sendingStream.isLast) begin
                 isEop.isEop = fromInteger(valueOf(SINGLE_TLP_IN_THIS_BEAT));
                 isEop.isEopPtrs[0] = truncate(convertByteEn2DwordPtr(sendingStream.byteEn));
             end
             
-            let sideBand = genRQSideBand(isEop, isSop, sideBandByteEnA, sideBandByteEnB);
+            let sideBand = genRQSideBand(isEop, isSop, sideBandByteEn0, sideBandByteEn1);
             let axiStream = ReqReqAxiStream {
                 tData  : sendingStream.data | pendingStream.data,
                 tKeep  : -1,
@@ -372,9 +410,13 @@ module mkConvertDataStreamsToStraddleAxis(ConvertDataStreamsToStraddleAxis);
                 tUser  : pack(sideBand)
             };
             axiStreamOutFifo.enq(axiStream);
-            // $display($time, "ns SIM INFO @ mkDataStreamToAxis: tx a AXIS frame, isSop:%h, isEop:%d, isEopPtr:%d, tData:%h", isSop.isSop, isEop.isEop, isEop.isEopPtrs[0], axiStream.tData);
-            if (isEop.isEop == 1 && isEop.isEopPtrs[0] == 0) begin
-                $display($time, "ns SIM Warning @ mkDataStreamToAxis: stream byteEn %b", sendingStream.byteEn);
+            $display($time, "ns SIM INFO @ mkDataStreamToAxis: tx a AXIS frame, isSop:%d, isSopPtr:%d/%d, isEop:%d, isEopPtr:%d/%d, BE0:%b/%b, BE1:%b/%b, tData:%h", 
+                isSop.isSop, isSop.isSopPtrs[0], isSop.isSopPtrs[1], isEop.isEop, isEop.isEopPtrs[0], isEop.isEopPtrs[1], tpl_1(sideBandByteEn0), tpl_2(sideBandByteEn0), tpl_1(sideBandByteEn1), tpl_2(sideBandByteEn1), axiStream.tData);
+            if (isEop.isEop >= fromInteger(valueOf(SINGLE_TLP_IN_THIS_BEAT)) && isEop.isEopPtrs[0] == 0) begin
+                $display($time, "ns SIM Warning @ mkDataStreamToAxis: sendingstream byteEn %b", sendingStream.byteEn);
+            end
+            else if (isEop.isEop == fromInteger(valueOf(DOUBLE_TLP_IN_THIS_BEAT)) && isEop.isEopPtrs[1] == 0) begin
+                $display($time, "ns SIM Warning @ mkDataStreamToAxis: pendingstream byteEn %b", pendingStream.byteEn);
             end
         end
     endrule
@@ -526,7 +568,7 @@ module mkConvertStraddleAxisToDataStream(ConvertStraddleAxisToDataStream);
                         sdStream.isFirst[0] = True;
                         sdStream.isLast[0] = unpack(isEop.isEop[1]);
                         sdStream.tag[0] = truncate(desc.tag);
-                        sdStream.isCompleted[0] = isCompleted[pathIdx];
+                        sdStream.isCompleted[0] = desc.isRequestCompleted;
                         outFifos[pathIdx].enq(sdStream);
                         tagReg[pathIdx] <= sdStream.tag[0];
                         isInTlpRegs[pathIdx] <= !sdStream.isLast[0];

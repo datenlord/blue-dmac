@@ -46,7 +46,7 @@ class TB(object):
         cq_straddle = False
         cc_straddle = False
         rq_straddle = True
-        rc_straddle = False
+        rc_straddle = True
         rc_4tlp_straddle = False
 
         self.client_tag = bool(int(os.getenv("CLIENT_TAG", "1")))
@@ -281,6 +281,18 @@ class TB(object):
         #monitor
         self.rq_monitor = AxiStreamMonitor(AxiStreamBus.from_prefix(dut, "m_axis_rq"), self.clock, self.resetn, False)
     
+    def gen_random_req(self, channel):
+        low_boundry = channel * 8192
+        high_boundry = (channel + 1) * 8192
+        idxs = random.sample(range(low_boundry, high_boundry), 2)
+        lo_idx, hi_idx = idxs[0], idxs[1] 
+        if (hi_idx < lo_idx):
+            temp = hi_idx
+            hi_idx = lo_idx
+            lo_idx = temp
+        length = hi_idx - lo_idx + 1
+        return (lo_idx, length)    
+            
     #Do not use user_rst but gen rstn for bsv
     async def gen_reset(self):
         self.resetn.value = 0
@@ -319,19 +331,40 @@ class TB(object):
         
     async def run_single_write_once(self, channel, addr, data):
         length = len(data)
-        self.log.info("Conduct DMA single write: addr %d, length %d, char %c", addr, length, data[0])
+        self.log.info("Conduct DMA single write: channel %d addr %d, length %d, char %c", channel, addr, length, data[0])
         await self.send_desc(channel, addr, length, True)
         await self.send_data(channel, data)
     
     async def run_single_read_once(self, channel, addr, length):
-        self.log.info("Conduct DMA single read: addr %d, length %d", addr, length)
+        self.log.info("Conduct DMA single read: channel %d addr %d, length %d", channel, addr, length)
         await self.send_desc(channel, addr, length, False)
         data = await self.recv_data(channel)
         self.log.info("Read data from RootComplex successfully, recv length %d, req length %d", len(data), length)
         return data
+    
+async def single_path_random_write_test(pcie_tb, dma_channel, mem):
+    for _ in range(100):
+        addr, length = pcie_tb.gen_random_req(dma_channel)
+        addr = mem.get_absolute_address(addr)
+        char = bytes(random.choice('abcdefghijklmnopqrstuvwxyz'), encoding="UTF-8")
+        data = char * length
+        await pcie_tb.run_single_write_once(dma_channel, addr, data)
+        await Timer(100+length, units='ns')
+        assert mem[addr:addr+length] == data
             
+
+async def single_path_random_read_test(pcie_tb, dma_channel, mem):
+    for _ in range(100):
+        addr, length = pcie_tb.gen_random_req(dma_channel)
+        addr = mem.get_absolute_address(addr)
+        char = bytes(random.choice('abcdefghijklmnopqrstuvwxyz'), encoding="UTF-8")
+        mem[addr:addr+length] = char * length
+        data = await pcie_tb.run_single_read_once(dma_channel, addr, length)
+        assert data == char * length
+            
+    
 @cocotb.test(timeout_time=100000000, timeout_unit="ns")
-async def random_write_test(dut):
+async def straddle_write_test(dut):
 
     tb = TB(dut)
     await tb.gen_reset()
@@ -343,19 +376,16 @@ async def random_write_test(dut):
     await dev.set_master()
     
     mem = tb.rc.mem_pool.alloc_region(1024*1024)
-    mem_base = mem.get_absolute_address(0)
     
-    dma_channel = 1
-    for _ in range(10):
-        addr_offset = random.randint(0, 8192)
-        length = random.randint(0, 8192)
-        char = bytes(random.choice('abcdefghijklmnopqrstuvwxyz'), encoding="UTF-8")
-        addr = addr_offset + mem_base
-        data = char * length
-        await tb.run_single_write_once(dma_channel, addr, data)
-        await Timer(100+length, units='ns')
-        assert mem[addr:addr+length] == char * length
-        await RisingEdge(tb.clock)
+    channel0 = cocotb.start_soon(single_path_random_write_test(tb, 0, mem))
+    channel1 = cocotb.start_soon(single_path_random_write_test(tb, 1, mem))
+    
+    tb.log.info("Start write test in straddle mode!")
+    
+    await channel0
+    await channel1
+    
+    tb.log.info("End write test in straddle mode succesfully!")
     
 @cocotb.test(timeout_time=10000000, timeout_unit="ns")   
 async def random_read_test(dut):
@@ -369,17 +399,16 @@ async def random_read_test(dut):
     await dev.set_master()
     
     mem = tb.rc.mem_pool.alloc_region(1024*1024)
-    mem_base = mem.get_absolute_address(0)
     
-    dma_channel = 0
-    for _ in range(100):
-        addr_offset = random.randint(0, 8192)
-        addr = addr_offset + mem_base
-        length = random.randint(0, 8192)
-        char = bytes(random.choice('abcdefghijklmnopqrstuvwxyz'), encoding="UTF-8")
-        mem[addr:addr+length] = char * length
-        data = await tb.run_single_read_once(dma_channel, addr, length)
-        assert data == char * length
+    channel0 = cocotb.start_soon(single_path_random_read_test(tb, 0, mem))
+    channel1 = cocotb.start_soon(single_path_random_read_test(tb, 1, mem))
+    
+    tb.log.info("Start Read test in straddle mode!")
+    
+    await channel0
+    await channel1
+    
+    tb.log.info("End Read test in straddle mode succesfully!")
 
 tests_dir = os.path.dirname(__file__)
 rtl_dir = tests_dir

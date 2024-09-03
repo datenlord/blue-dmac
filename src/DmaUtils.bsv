@@ -10,26 +10,21 @@ import PrimUtils::*;
 import StreamUtils::*;
 import PcieDescriptorTypes::*;
 
-
-typedef Bit#(BUS_BOUNDARY_WIDTH)            PcieTlpMaxMaxPayloadSize;
-typedef Bit#(TLog#(BUS_BOUNDARY_WIDTH))     PcieTlpSizeWidth;
-
-typedef 128                                 DEFAULT_TLP_SIZE;
-typedef TLog#(DEFAULT_TLP_SIZE)             DEFAULT_TLP_SIZE_WIDTH;
-
-typedef 3                                   PCIE_TLP_SIZE_SETTING_WIDTH;
-typedef Bit#(PCIE_TLP_SIZE_SETTING_WIDTH)   PcieTlpSizeSetting;      
-
 typedef TAdd#(1, TLog#(TDiv#(BUS_BOUNDARY, BYTE_EN_WIDTH))) DATA_BEATS_WIDTH;
 typedef Bit#(DATA_BEATS_WIDTH)                              DataBeats;                 
+
+function Tag convertSlotTokenToTag(SlotToken token, DmaPathNo pathIdx);
+    Tag tag = zeroExtend(token) | (zeroExtend(pathIdx) << (valueOf(DES_NONEXTENDED_TAG_WIDTH)-1));
+    return tag;
+endfunction
 
 typedef 4 CHUNK_COMPUTE_LATENCY;
 // Split the input DmaRequest Info MRRS aligned chunkReqs
 interface ChunkCompute;
     interface FifoIn#(DmaExtendRequest)  dmaRequestFifoIn;
     interface FifoOut#(DmaRequest)       chunkRequestFifoOut;
-    interface FifoOut#(DmaMemAddr)       chunkCntFifoOut;
-    interface Put#(PcieTlpSizeSetting)   setTlpMaxSize;
+    // interface FifoOut#(DmaMemAddr)       chunkCntFifoOut;
+    interface Put#(Tuple2#(TlpPayloadSize, TlpPayloadSizeWidth)) maxReadReqSize;
 endinterface 
 
 module mkChunkComputer (TRXDirection direction, ChunkCompute ifc);
@@ -37,14 +32,14 @@ module mkChunkComputer (TRXDirection direction, ChunkCompute ifc);
     FIFOF#(DmaExtendRequest)  inputFifo  <- mkFIFOF;
     FIFOF#(DmaRequest)        outputFifo <- mkFIFOF;
     FIFOF#(Tuple2#(DmaExtendRequest, DmaMemAddr))  pipeFifo <- mkFIFOF;
-    FIFOF#(DmaMemAddr)        tlpCntFifo <- mkSizedFIFOF(valueOf(CHUNK_COMPUTE_LATENCY));
+    // FIFOF#(DmaMemAddr)        tlpCntFifo <- mkSizedFIFOF(valueOf(CHUNK_COMPUTE_LATENCY));
 
     Reg#(DmaMemAddr) newChunkPtrReg      <- mkReg(0);
     Reg#(DmaMemAddr) totalLenRemainReg   <- mkReg(0);
     Reg#(Bool)       isSplittingReg      <- mkReg(False);
     
-    Reg#(DmaMemAddr)       tlpMaxSizeReg      <- mkReg(fromInteger(valueOf(DEFAULT_TLP_SIZE)));
-    Reg#(PcieTlpSizeWidth) tlpMaxSizeWidthReg <- mkReg(fromInteger(valueOf(DEFAULT_TLP_SIZE_WIDTH)));   
+    Reg#(DmaMemAddr)          tlpMaxSizeReg      <- mkReg(fromInteger(valueOf(DEFAULT_TLP_SIZE)));
+    Reg#(TlpPayloadSizeWidth) tlpMaxSizeWidthReg <- mkReg(fromInteger(valueOf(DEFAULT_TLP_SIZE_WIDTH)));   
 
     function Bool hasBoundary(DmaExtendRequest request);
         let highIdx = request.endAddr >> tlpMaxSizeWidthReg;
@@ -60,7 +55,7 @@ module mkChunkComputer (TRXDirection direction, ChunkCompute ifc);
 
     function DmaMemAddr getOffset(DmaExtendRequest request);
         // MPS - startAddr % MPS, MPS means MRRS when the module is set to RX mode
-        DmaMemAddr remainderOfMps = zeroExtend(PcieTlpMaxMaxPayloadSize'(request.startAddr[tlpMaxSizeWidthReg-1:0]));
+        DmaMemAddr remainderOfMps = zeroExtend(TlpPayloadSize'(request.startAddr[tlpMaxSizeWidthReg-1:0]));
         DmaMemAddr offsetOfMps = tlpMaxSizeReg - remainderOfMps;    
         return offsetOfMps;
     endfunction
@@ -72,8 +67,8 @@ module mkChunkComputer (TRXDirection direction, ChunkCompute ifc);
         let firstLen = (request.length > tlpMaxSizeReg) ? tlpMaxSizeReg : request.length;
         let firstChunkLen = hasBoundary(request) ? offset : firstLen;
         pipeFifo.enq(tuple2(request, firstChunkLen));
-        let tlpCnt = getTlpCnts(request);
-        tlpCntFifo.enq(tlpCnt);
+        // let tlpCnt = getTlpCnts(request);
+        // tlpCntFifo.enq(tlpCnt);
     endrule
 
     rule execChunkCompute;
@@ -119,16 +114,12 @@ module mkChunkComputer (TRXDirection direction, ChunkCompute ifc);
 
     interface  dmaRequestFifoIn = convertFifoToFifoIn(inputFifo);
     interface  chunkRequestFifoOut = convertFifoToFifoOut(outputFifo);
-    interface  chunkCntFifoOut  = convertFifoToFifoOut(tlpCntFifo);
+    // interface  chunkCntFifoOut  = convertFifoToFifoOut(tlpCntFifo);
 
-    interface Put setTlpMaxSize;
-        method Action put (PcieTlpSizeSetting tlpSizeSetting);
-            let setting = tlpSizeSetting;
-            setting[valueOf(PCIE_TLP_SIZE_SETTING_WIDTH)-1] = (direction == DMA_TX) ? 0 : setting[valueOf(PCIE_TLP_SIZE_SETTING_WIDTH)-1];
-            DmaMemAddr defaultTlpMaxSize = fromInteger(valueOf(DEFAULT_TLP_SIZE));
-            tlpMaxSizeReg <= DmaMemAddr'(defaultTlpMaxSize << setting);
-            PcieTlpSizeWidth defaultTlpMaxSizeWidth = fromInteger(valueOf(DEFAULT_TLP_SIZE_WIDTH));
-            tlpMaxSizeWidthReg <= PcieTlpSizeWidth'(defaultTlpMaxSizeWidth + zeroExtend(setting));
+    interface Put maxReadReqSize;
+        method Action put (Tuple2#(TlpPayloadSize, TlpPayloadSizeWidth) mrrsCfg);
+            tlpMaxSizeReg <= zeroExtend(tpl_1(mrrsCfg));
+            tlpMaxSizeWidthReg <= zeroExtend(tpl_2(mrrsCfg));
         endmethod
     endinterface
     
@@ -144,7 +135,7 @@ interface ChunkSplit;
     interface FifoIn#(DmaExtendRequest) reqFifoIn;
     interface FifoOut#(DataStream)      chunkDataFifoOut;
     interface FifoOut#(DmaRequest)      chunkReqFifoOut;
-    interface Put#(PcieTlpSizeSetting)  setTlpMaxSize;
+    interface Put#(Tuple2#(TlpPayloadSize, TlpPayloadSizeWidth)) maxPayloadSize;
 endinterface
 
 module mkChunkSplit(TRXDirection direction, ChunkSplit ifc);
@@ -158,9 +149,9 @@ module mkChunkSplit(TRXDirection direction, ChunkSplit ifc);
 
     StreamSplit firstChunkSplitor <- mkStreamSplit;
 
-    Reg#(DmaMemAddr)       tlpMaxSizeReg      <- mkReg(fromInteger(valueOf(DEFAULT_TLP_SIZE)));
-    Reg#(PcieTlpSizeWidth) tlpMaxSizeWidthReg <- mkReg(fromInteger(valueOf(DEFAULT_TLP_SIZE_WIDTH)));   
-    Reg#(DataBeats)        tlpMaxBeatsReg     <- mkReg(fromInteger(valueOf(TDiv#(DEFAULT_TLP_SIZE, BYTE_EN_WIDTH))));
+    Reg#(DmaMemAddr)          tlpMaxSizeReg      <- mkReg(fromInteger(valueOf(DEFAULT_TLP_SIZE)));
+    Reg#(TlpPayloadSizeWidth) tlpMaxSizeWidthReg <- mkReg(fromInteger(valueOf(DEFAULT_TLP_SIZE_WIDTH)));   
+    Reg#(DataBeats)           tlpMaxBeatsReg     <- mkReg(fromInteger(valueOf(TDiv#(DEFAULT_TLP_SIZE, BYTE_EN_WIDTH))));
 
     Reg#(Bool)      isInProcReg <- mkReg(False);
     Reg#(DataBeats) beatsReg    <- mkReg(0);
@@ -177,7 +168,7 @@ module mkChunkSplit(TRXDirection direction, ChunkSplit ifc);
 
     function DmaMemAddr getOffset(DmaExtendRequest request);
         // MPS - startAddr % MPS, MPS means MRRS when the module is set to RX mode
-        DmaMemAddr remainderOfMps = zeroExtend(PcieTlpMaxMaxPayloadSize'(request.startAddr[tlpMaxSizeWidthReg-1:0]));
+        DmaMemAddr remainderOfMps = zeroExtend(TlpPayloadSize'(request.startAddr[tlpMaxSizeWidthReg-1:0]));
         DmaMemAddr offsetOfMps = tlpMaxSizeReg - remainderOfMps;    
         return offsetOfMps;
     endfunction
@@ -193,7 +184,7 @@ module mkChunkSplit(TRXDirection direction, ChunkSplit ifc);
             let offset = getOffset(request);
             let firstLen = (request.length > tlpMaxSizeReg) ? tlpMaxSizeReg : request.length;
             let firstChunkLen = hasBoundary(request) ? offset : firstLen;
-            // $display($time, "ns SIM INFO @ mkChunkSplit: get first chunkLen, offset %d, remainder %d", offset, PcieTlpMaxMaxPayloadSize'(request.startAddr[tlpMaxSizeWidthReg-1:0]));
+            // $display($time, "ns SIM INFO @ mkChunkSplit: get first chunkLen, offset %d, remainder %d", offset, TlpPayloadSize'(request.startAddr[tlpMaxSizeWidthReg-1:0]));
             firstChunkSplitor.splitLocationFifoIn.enq(unpack(truncate(firstChunkLen)));
             let firstReq = DmaRequest {
                 startAddr : request.startAddr,
@@ -282,16 +273,12 @@ module mkChunkSplit(TRXDirection direction, ChunkSplit ifc);
     interface chunkDataFifoOut = convertFifoToFifoOut(chunkOutFifo);
     interface chunkReqFifoOut  = convertFifoToFifoOut(reqOutFifo);
 
-    interface Put setTlpMaxSize;
-        method Action put (PcieTlpSizeSetting tlpSizeSetting);
-            let setting = tlpSizeSetting;
-            setting[valueOf(PCIE_TLP_SIZE_SETTING_WIDTH)-1] = (direction == DMA_TX) ? 0 : setting[valueOf(PCIE_TLP_SIZE_SETTING_WIDTH)-1];
-            DmaMemAddr defaultTlpMaxSize = fromInteger(valueOf(DEFAULT_TLP_SIZE));
-            tlpMaxSizeReg <= DmaMemAddr'(defaultTlpMaxSize << setting);
-            PcieTlpSizeWidth defaultTlpMaxSizeWidth = fromInteger(valueOf(DEFAULT_TLP_SIZE_WIDTH));
-            tlpMaxSizeWidthReg <= PcieTlpSizeWidth'(defaultTlpMaxSizeWidth + zeroExtend(setting));
+    interface Put maxPayloadSize;
+        method Action put (Tuple2#(TlpPayloadSize, TlpPayloadSizeWidth) mpsCfg);
+            tlpMaxSizeReg <= zeroExtend(tpl_1(mpsCfg));
+            tlpMaxSizeWidthReg <= tpl_2(mpsCfg);
             // BeatsNum = (MaxPayloadSize + DescriptorSize) / BytesPerBeat
-            tlpMaxBeatsReg <= truncate(DmaMemAddr'(defaultTlpMaxSize << setting) >> valueOf(BYTE_EN_WIDTH));
+            tlpMaxBeatsReg <= truncate(tpl_1(mpsCfg) >> valueOf(TLog#(BYTE_EN_WIDTH)));
         endmethod
     endinterface
 endmodule
