@@ -1,6 +1,8 @@
 import FIFOF::*;
 import Vector::*;
 import Connectable :: *;
+import DReg::*;
+import GetPut::*;
 
 import SemiFifo::*;
 import BusConversion::*;
@@ -34,6 +36,12 @@ endinterface
 (* synthesize *)
 module mkDmaController(DmaController);
     Vector#(DMA_PATH_NUM, DmaC2HPipe) c2hPipes = newVector;
+
+    Wire#(Bool) linkUpWire <- mkWire;
+    
+    Reg#(Bool) linkUpReg  <- mkReg(False);
+    Reg#(Bool) cfgFlagReg <- mkDReg(False);
+
     for (DmaPathNo pathIdx = 0; pathIdx < fromInteger(valueOf(DMA_PATH_NUM)); pathIdx = pathIdx + 1) begin
         c2hPipes[pathIdx] <- mkDmaC2HPipe(pathIdx);
     end
@@ -60,6 +68,21 @@ module mkDmaController(DmaController);
     mkConnection(cmplAdapter.dmaDataFifoOut, h2cPipe.tlpDataFifoIn);
     mkConnection(h2cPipe.tlpDataFifoOut, cmplAdapter.dmaDataFifoIn);
 
+    rule detectLink if (linkUpWire && !linkUpReg);
+        configurator.initCfg;
+        cfgFlagReg <= True;
+        linkUpReg <= True;
+        $display($time, "ns SIM INFO @ BLUE-DMAC: PCIe link is up!");
+    endrule
+
+    rule setCfg if (cfgFlagReg);
+        let tlpSizeCfg <- configurator.tlpSizeCfg.get;
+        for (DmaPathNo pathIdx = 0; pathIdx < fromInteger(valueOf(DMA_PATH_NUM)); pathIdx = pathIdx + 1) begin
+            c2hPipes[pathIdx].tlpSizeCfg.put(tlpSizeCfg);
+        end
+        $display($time, "ns SIM INFO @ BLUE-DMAC: Get PCIe configurations, mps:%d, mrrs:%d", tlpSizeCfg.mps, tlpSizeCfg.mrrs);
+    endrule
+
     // User Logic Ifc
     interface c2hDataFifoIn  = c2hDataInIfc;
     interface c2hDataFifoOut = c2hDataOutIfc;
@@ -76,8 +99,7 @@ module mkDmaController(DmaController);
         interface completerComplete = cmplAdapter.rawCompleterComplete;
         interface configuration     = configurator.rawConfiguration;
         method Action linkUp(Bool isLinkUp);
-            // let cfgs = configurator.get;
-            // c2hpipes[pathIdx].setCfg(cfgs);
+            linkUpWire <= isLinkUp;
         endmethod
     endinterface
 endmodule

@@ -26,6 +26,18 @@ typedef Bit#(1) ByteParity;
 typedef 4096                                BUS_BOUNDARY;
 typedef TAdd#(1, TLog#(BUS_BOUNDARY))       BUS_BOUNDARY_WIDTH;
 
+typedef 128                                 DEFAULT_TLP_SIZE;
+typedef TLog#(DEFAULT_TLP_SIZE)             DEFAULT_TLP_SIZE_WIDTH;
+typedef Bit#(BUS_BOUNDARY_WIDTH)            TlpPayloadSize;
+typedef Bit#(TLog#(BUS_BOUNDARY_WIDTH))     TlpPayloadSizeWidth;
+
+typedef struct {
+    TlpPayloadSize      mps;
+    TlpPayloadSizeWidth mpsWidth;
+    TlpPayloadSize      mrrs;
+    TlpPayloadSizeWidth mrrsWidth;
+} TlpSizeCfg deriving(Bits, Eq, Bounded, FShow);
+
 typedef 2 CONCAT_STREAM_NUM;
 
 typedef TDiv#(DATA_WIDTH, BYTE_WIDTH)  BYTE_EN_WIDTH;

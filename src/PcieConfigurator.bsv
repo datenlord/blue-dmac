@@ -1,18 +1,37 @@
-
+import GetPut::*;
+import DReg::*;
 import PcieTypes::*;
 import PcieAxiStreamTypes::*;
+import DmaTypes::*;
 
 typedef 256 PCIE_CFG_VF_FLR_INPROC_EXTEND_WIDTH;
 
 interface PcieConfigurator;
     interface RawPcieConfiguration rawConfiguration;
     // TODO: translate raw Ifcs to bluespec style Get Ifcs
-    method PcieCfgLtssmState getPcieLtssmState();
+    interface Get#(TlpSizeCfg) tlpSizeCfg;
+    method Action initCfg;
 endinterface
 
 module mkPcieConfigurator(PcieConfigurator);
     // TODO: the powerStateChangeAck must waitng for completing Done
     Reg#(Bool) powerStateChangeIntrReg <- mkReg(False);
+    Reg#(Bool) isInitDoneReg <- mkDReg(False);
+
+    // status wires
+    Wire#(PcieCfgMaxPayloadSize) mpsSettingWire   <- mkWire;
+    Wire#(PCieCfgMaxReadReqSize) mrrsSettingWire  <- mkWire;
+    Wire#(PCieCfgCurrentSpeed)   speedSettingWire <- mkWire;
+    Wire#(PcieCfgNegotiatedWidth) linkWidthSettingWire <- mkWire;
+
+    // Cfg Regs
+    Reg#(TlpSizeCfg) tlpSizeCfgReg <- mkReg(TlpSizeCfg {
+        mps       : fromInteger(valueOf(DEFAULT_TLP_SIZE)),
+        mpsWidth  : fromInteger(valueOf(DEFAULT_TLP_SIZE_WIDTH)),
+        mrrs      : fromInteger(valueOf(DEFAULT_TLP_SIZE)),
+        mrrsWidth : fromInteger(valueOf(DEFAULT_TLP_SIZE_WIDTH))
+    });
+
 
     // Here has a 2-stage pipeline for FLR, according to the Xilinx PCIe Example Design
     // Reg0 means stage0, and Reg1 means stage1
@@ -22,13 +41,35 @@ module mkPcieConfigurator(PcieConfigurator);
     Reg#(PcieCfgVFFlrFuncNum)   cfgVFFlrFuncNumReg1 <- mkReg(0);
     Reg#(Bool)                  cfgVFFlrDoneReg1    <- mkReg(False);
     Reg#(Bit#(PCIE_CFG_VF_FLR_INPROC_EXTEND_WIDTH)) cfgVfFlrInprocReg0 <- mkReg(0);
-
+    
     rule functionLevelRst;
         cfgVFFlrFuncNumReg  <= cfgVFFlrFuncNumReg + 1;
         cfgFlrDoneReg1      <= cfgFlrDoneReg0;
         cfgVFFlrDoneReg1    <= unpack(cfgVfFlrInprocReg0[cfgVFFlrFuncNumReg]);
         cfgVFFlrFuncNumReg1 <= cfgVFFlrFuncNumReg;
     endrule
+
+    method Action initCfg;
+        TlpPayloadSize defaultTlpMaxSize = fromInteger(valueOf(DEFAULT_TLP_SIZE));
+        TlpPayloadSizeWidth defaultTlpMaxSizeWidth = fromInteger(valueOf(DEFAULT_TLP_SIZE_WIDTH));
+        let mps = defaultTlpMaxSize << mpsSettingWire;
+        let mpsWidth = defaultTlpMaxSizeWidth + zeroExtend(mpsSettingWire);
+        let mrrs = defaultTlpMaxSize << mrrsSettingWire;
+        let mrrsWidth = defaultTlpMaxSizeWidth + zeroExtend(mrrsSettingWire);
+        tlpSizeCfgReg <= TlpSizeCfg {
+            mps       : mps,
+            mpsWidth  : mpsWidth,
+            mrrs      : mrrs,
+            mrrsWidth : mrrsWidth
+        };
+        isInitDoneReg <= True;
+    endmethod
+
+    interface Get tlpSizeCfg;
+        method ActionValue#(TlpSizeCfg) get();
+            return tlpSizeCfgReg;
+        endmethod
+    endinterface
 
     interface RawPcieConfiguration rawConfiguration;
 
@@ -352,7 +393,10 @@ module mkPcieConfigurator(PcieConfigurator);
                 PcieCfgLtssmState        ltssmState,
                 PcieCfgRcbStatus         rcbStatus,
                 PcieCfgDpaSubstageChange dpaSubstageChange,
-                PcieCfgObffEn            obffEnable);
+                PcieCfgObffEn            obffEnable
+                );
+                    mpsSettingWire  <= maxPayloadSize;
+                    mrrsSettingWire <= maxReadReqSize;
             endmethod
         endinterface
 
@@ -364,9 +408,5 @@ module mkPcieConfigurator(PcieConfigurator);
         endinterface
 
     endinterface
-
-    method PcieCfgLtssmState getPcieLtssmState();
-        return 0;
-    endmethod
 
 endmodule
