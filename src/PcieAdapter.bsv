@@ -34,6 +34,7 @@ interface RequesterAxiStreamAdapter;
     (* prefix = "" *) interface RawPcieRequesterComplete rawRequesterComplete;
 endinterface
 
+// TODO: optimize fully-pipeline performance
 (* synthesize *)
 module mkRequesterAxiStreamAdapter(RequesterAxiStreamAdapter);
     ConvertDataStreamsToStraddleAxis dmaToAxisConverter <- mkConvertDataStreamsToStraddleAxis;

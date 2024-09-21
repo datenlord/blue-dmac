@@ -8,11 +8,13 @@ import PcieDescriptorTypes::*;
 typedef PCIE_AXIS_DATA_WIDTH DATA_WIDTH;
 
 typedef 64  DMA_MEM_ADDR_WIDTH;
+typedef 32  DMA_REQ_LEN_WIDTH;
 
 typedef 32 DMA_CSR_ADDR_WIDTH;
 typedef 32 DMA_CSR_DATA_WIDTH;
 
 typedef Bit#(DMA_MEM_ADDR_WIDTH) DmaMemAddr;
+typedef Bit#(DMA_REQ_LEN_WIDTH)  DmaReqLen;
 typedef Bit#(DMA_CSR_ADDR_WIDTH) DmaCsrAddr;
 typedef Bit#(DMA_CSR_DATA_WIDTH) DmaCsrValue;
 
@@ -57,16 +59,27 @@ typedef 2'b11                                 MaxByteModDword;
 
 typedef struct {
     DmaMemAddr startAddr;
-    DmaMemAddr length;
+    DmaReqLen  length;
     Bool       isWrite;
 } DmaRequest deriving(Bits, Bounded, Eq);
 
 typedef struct {
     DmaMemAddr startAddr;
     DmaMemAddr endAddr;
-    DmaMemAddr length;
+    DmaReqLen  length;
     Tag        tag;
 } DmaExtendRequest deriving(Bits, Bounded, Eq);
+
+typedef struct {
+    DmaCsrAddr  addr;
+    DmaCsrValue value;
+    Bool        isWrite;
+} CsrRequest deriving(Bits, Bounded, Eq);
+
+typedef struct {
+    DmaCsrAddr  addr;
+    DmaCsrValue value;
+} CsrResponse deriving(Bits, Bounded, Eq);
 
 typedef enum {
     DMA_RX, 
@@ -177,6 +190,66 @@ typedef TSub#(DES_NONEXTENDED_TAG_WIDTH, 1) SLOT_TOKEN_WIDTH;
 typedef Bit#(SLOT_TOKEN_WIDTH) SlotToken;
 typedef 16 SLOT_PER_PATH;
 typedef TAdd#(1, TDiv#(BUS_BOUNDARY, BYTE_EN_WIDTH)) MAX_STREAM_NUM_PER_COMPLETION;
+
+// Internal Registers 
+/* Block 1 - DMA inner Ctrl Regs
+ * Block 2 - Addr Table Lo Addr Path0
+ * Block 3 - Addr Table Hi Addr Path0
+ * Block 4 - Addr Table Lo Addr Path1
+ * Block 5 - Addr Table Hi Addr Path1
+ * Block 6 ~ 7 - Reserved Or External Modules Use
+ * 4K Boundary
+ * Block 8 ~ N - External Modules Use 
+ */
+typedef 512 DMA_INTERNAL_REG_BLOCK;
+typedef TLog#(DMA_INTERNAL_REG_BLOCK) DMA_INTERNAL_REG_BLOCK_WIDTH;
+
+typedef 16 DMA_INTERNAL_REG_BLOCK_NUM;
+typedef Bit#(TLog#(DMA_INTERNAL_REG_BLOCK_NUM)) DmaRegBlockIdx;
+
+typedef TMul#(DMA_INTERNAL_REG_BLOCK, 1) DMA_PA_TABLE0_OFFSET;
+typedef TMul#(DMA_INTERNAL_REG_BLOCK, 3) DMA_PA_TABLE1_OFFSET;
+typedef TMul#(DMA_INTERNAL_REG_BLOCK, 5) DMA_EX_REG_OFFSET;
+
+// Control Reg offset of Block 0
+typedef Bit#(TLog#(DMA_INTERNAL_REG_BLOCK)) DmaRegIndex;
+typedef 16  DMA_USING_REG_LEN;
+
+typedef 0  REG_DESC_ADDR_LO_0;
+typedef 1  REG_DESC_ADDR_HI_0;
+typedef 2  REG_DESC_LEN_0;
+typedef 3  REG_DESC_CNTL_0;     // Doorbell 0
+
+typedef 4  REG_DESC_ADDR_LO_1;
+typedef 5  REG_DESC_ADDR_HI_1;
+typedef 6  REG_DESC_LEN_1;
+typedef 7  REG_DESC_CNTL_1;     // Doorbell 1
+
+typedef 8  REG_FLAG_ADDR_LO_0;  // request status write back address
+typedef 9  REG_FLAG_ADDR_HI_0;
+
+typedef 10 REG_FLAG_ADDR_LO_1;  // request status write back address
+typedef 11 REG_FLAG_ADDR_HI_1;
+
+typedef 12 REG_VA_HEADER_LO_0;
+typedef 13 REG_VA_HEADER_HI_0;
+typedef 14 REG_VA_HEADER_LO_1;
+typedef 15 REG_VA_HEADER_HI_1;      
+
+// VA-PA Table, allow 512 VA-PA Page Elements, i.e. 2M(4K page) or 1G(2M huge page, recommend configuration)
+typedef DMA_INTERNAL_REG_BLOCK PA_NUM;
+typedef TMul#(PA_NUM, 2) DMA_PHY_ADDR_REG_LEN;
+
+typedef Bit#(TLog#(PA_NUM)) PaBramAddr;
+typedef 2 PA_TABLE0_BLOCK_OFFSET;
+typedef 4 PA_TABLE1_BLOCK_OFFSET;
+
+typedef 4096 PAGE_SIZE;
+typedef TLog#(PAGE_SIZE) PAGE_SIZE_WIDTH;
+
+typedef 'h200000 HUGE_PAGE_SIZE;
+typedef TLog#(HUGE_PAGE_SIZE) HUGE_PAGE_SIZE_WIDTH;
+
 
 
 

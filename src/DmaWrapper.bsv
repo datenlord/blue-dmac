@@ -1,8 +1,10 @@
 import FIFOF::*;
+import FIFO::*;
 import Vector::*;
 import Connectable :: *;
 import DReg::*;
 import GetPut::*;
+import BRAMFIFO::*;
 
 import SemiFifo::*;
 import BusConversion::*;
@@ -15,18 +17,18 @@ import DmaTypes::*;
 import DmaUtils::*;
 import DmaC2HPipe::*;
 import DmaH2CPipe::*;
+import SimpleModeUtils::*;
 
 // For Bsv User
-
+// Native Blue-DMA Interface, the addrs in the req should be pa
 interface DmaController;
     // User Logic Ifc
     interface Vector#(DMA_PATH_NUM, FifoIn#(DataStream))  c2hDataFifoIn;
     interface Vector#(DMA_PATH_NUM, FifoOut#(DataStream)) c2hDataFifoOut;
     interface Vector#(DMA_PATH_NUM, FifoIn#(DmaRequest))  c2hReqFifoIn;
 
-    interface FifoIn#(DmaCsrValue)  h2cDataFifoIn;
-    interface FifoOut#(DmaCsrValue) h2cDataFifoOut;
-    interface FifoOut#(DmaRequest)  h2cReqFifoOut;
+    interface FifoIn#(CsrResponse)  h2cRespFifoIn;
+    interface FifoOut#(CsrRequest)  h2cReqFifoOut;
  
     // Raw PCIe interfaces, connected to the Xilinx PCIe IP
     (* prefix = "" *)interface RawXilinxPcieIp       rawPcie;
@@ -87,9 +89,8 @@ module mkDmaController(DmaController);
     interface c2hDataFifoIn  = c2hDataInIfc;
     interface c2hDataFifoOut = c2hDataOutIfc;
     interface c2hReqFifoIn   = c2hReqInIfc;
-    interface h2cDataFifoIn  = h2cPipe.rdDataFifoIn;
-    interface h2cDataFifoOut = h2cPipe.wrDataFifoOut;
-    interface h2cReqFifoOut  = h2cPipe.reqFifoOut;
+    interface h2cRespFifoIn  = h2cPipe.csrRespFifoIn;
+    interface h2cReqFifoOut  = h2cPipe.csrReqFifoOut;
 
     // Raw PCIe Ifc
     interface RawXilinxPcieIp rawPcie;
@@ -112,18 +113,30 @@ interface RawDmaReqSlave;
     method Action validReq(
         (* port = "valid"    *)     Bool       valid,
         (* port = "start_addr"  *)  DmaMemAddr startAddr,
-        (* port = "byte_cnt"  *)    DmaMemAddr length,
+        (* port = "byte_cnt"  *)    DmaReqLen  length,
         (* port = "is_write"  *)    Bool       isWrite
     );
     (* result = "ready" *) method Bool ready;
 endinterface
 
 (* always_ready, always_enabled *)
-interface RawDmaCsrReqMaster;
+interface RawDmaCsrMaster;
     (* result = "address" *)  method DmaCsrAddr  address;
+    (* result = "value" *)    method DmaCsrValue value;
     (* result = "is_write" *) method Bool        isWrite;
     (* result = "valid" *)    method Bool        valid;
     (* prefix = "" *) method Action ready((* port = "ready" *) Bool rdy);
+endinterface
+
+(* always_ready, always_enabled *)
+interface RawDmaCsrSlave;
+    (* prefix = "" *)
+    method Action validResp(
+        (* port = "valid"    *)     Bool        valid,
+        (* port = "address"  *)     DmaCsrAddr  address,
+        (* port = "value"  *)       DmaCsrValue value
+    );
+    (* result = "ready" *) method Bool ready;
 endinterface
 
 typedef TDiv#(DATA_WIDTH, BYTE_WIDTH) DMA_DATA_KEEP_WIDTH;
@@ -131,8 +144,6 @@ typedef 1 DMA_DATA_USER_WIDTH;
 typedef RawAxiStreamSlave#(DMA_DATA_KEEP_WIDTH, DMA_DATA_USER_WIDTH)  RawDmaDataSlave;
 typedef RawAxiStreamMaster#(DMA_DATA_KEEP_WIDTH, DMA_DATA_USER_WIDTH) RawDmaDataMaster;
 typedef AxiStream#(DMA_DATA_KEEP_WIDTH, DMA_DATA_USER_WIDTH) DmaAxiStream;
-typedef RawBusMaster#(DmaCsrValue) RawDmaCsrMaster;
-typedef RawBusSlave#(DmaCsrValue)  RawDmaCsrSlave;
 
 module mkFifoInToRawDmaDataSlave#(FifoIn#(DataStream) pipe)(RawDmaDataSlave);
     Reg#(Bool) isFirstReg <- mkReg(True);
@@ -181,7 +192,7 @@ module mkFifoInToRawDmaReqSlave#(FifoIn#(DmaRequest) pipe)(RawDmaReqSlave);
     method Action validReq(
         Bool       valid,
         DmaMemAddr startAddr,
-        DmaMemAddr length,
+        DmaReqLen  length,
         Bool       isWrite
     );
         let request = DmaRequest {
@@ -194,9 +205,10 @@ module mkFifoInToRawDmaReqSlave#(FifoIn#(DmaRequest) pipe)(RawDmaReqSlave);
     method Bool ready = rawBus.ready;
 endmodule
 
-module mkFifoOutToRawCsrReqMaster#(FifoOut#(DmaRequest) pipe)(RawDmaCsrReqMaster);
+module mkFifoOutToRawCsrMaster#(FifoOut#(CsrRequest) pipe)(RawDmaCsrMaster);
     let rawBus <- mkFifoOutToRawBusMaster(pipe);
-    method DmaCsrAddr  address = truncate(rawBus.data.startAddr);
+    method DmaCsrAddr  address = rawBus.data.addr;
+    method DmaCsrValue value   = rawBus.data.value;
     method Bool        isWrite = rawBus.data.isWrite;
     method Bool        valid   = rawBus.valid;
     method Action ready(Bool rdy);
@@ -204,8 +216,25 @@ module mkFifoOutToRawCsrReqMaster#(FifoOut#(DmaRequest) pipe)(RawDmaCsrReqMaster
     endmethod
 endmodule
 
+module mkFifoInToRawCsrClient#(FifoIn#(CsrResponse) pipe)(RawDmaCsrSlave);
+    let rawBus <- mkFifoInToRawBusSlave(pipe);
+    method Action validResp(
+        Bool        valid,
+        DmaCsrAddr  addr,
+        DmaCsrValue value
+    );
+        let resp = CsrResponse {
+            addr  : addr,
+            value : value
+        };
+        rawBus.validData(valid, resp);
+    endmethod
+    method Bool ready = rawBus.ready;
+endmodule
+
+// Bypass Mode
 // Raw verilog Wrapper of Dma User Logic Ifc
-interface RawDmaController;
+interface RawBypassDmaController;
     // User Logic Ifc
     (* prefix = "s_axis_c2h_0" *)  interface RawDmaDataSlave  dmaWrData0;
     (* prefix = "s_desc_c2h_0" *)  interface RawDmaReqSlave   dmaDesc0;
@@ -215,16 +244,15 @@ interface RawDmaController;
     (* prefix = "s_desc_c2h_1" *)  interface RawDmaReqSlave   dmaDesc1;
     (* prefix = "m_axis_c2h_1" *)  interface RawDmaDataMaster dmaRdData1;
 
-    (* prefix = "s_h2c_value" *)   interface RawDmaCsrSlave     dmaRdCsr;
-    (* prefix = "m_h2c_value" *)   interface RawDmaCsrReqMaster dmaCsrDesc;
-    (* prefix = "m_h2c_desc" *)    interface RawDmaCsrMaster    dmaWrCsr;
+    (* prefix = "s_h2c_csr" *)     interface RawDmaCsrSlave   dmaCsrResp;
+    (* prefix = "m_h2c_csr" *)     interface RawDmaCsrMaster  dmaCsrReq;
 
     // Raw PCIe interfaces, connected to the Xilinx PCIe IP
     (* prefix = "" *)        interface RawXilinxPcieIp       rawPcie;
 endinterface
 
 (* synthesize *)
-module mkRawDmaController(RawDmaController);
+module mkRawBypassDmaController(RawBypassDmaController);
     DmaController dmac <- mkDmaController;
 
     let dmaWrData0Ifc <- mkFifoInToRawDmaDataSlave(dmac.c2hDataFifoIn[0]);
@@ -235,9 +263,8 @@ module mkRawDmaController(RawDmaController);
     let dmaDesc1Ifc   <- mkFifoInToRawDmaReqSlave(dmac.c2hReqFifoIn[1]);
     let dmaRdData1Ifc <- mkFifoOutToRawDmaDataMaster(dmac.c2hDataFifoOut[1]);
 
-    let dmaRdCsrIfc   <- mkFifoInToRawBusSlave(dmac.h2cDataFifoIn);
-    let dmaWrCsrIfc   <- mkFifoOutToRawBusMaster(dmac.h2cDataFifoOut);
-    let dmaCsrDescIfc <- mkFifoOutToRawCsrReqMaster(dmac.h2cReqFifoOut);
+    let csrRespIfc    <- mkFifoInToRawCsrClient(dmac.h2cRespFifoIn);
+    let csrReqIfc     <- mkFifoOutToRawCsrMaster(dmac.h2cReqFifoOut);
 
     interface dmaWrData0 = dmaWrData0Ifc;
     interface dmaDesc0   = dmaDesc0Ifc;  
@@ -245,11 +272,36 @@ module mkRawDmaController(RawDmaController);
     interface dmaWrData1 = dmaWrData1Ifc;
     interface dmaDesc1   = dmaDesc1Ifc;
     interface dmaRdData1 = dmaRdData1Ifc;
-    interface dmaRdCsr   = dmaRdCsrIfc;
-    interface dmaCsrDesc = dmaCsrDescIfc;
-    interface dmaWrCsr   = dmaWrCsrIfc; 
+    interface dmaCsrResp = csrRespIfc;
+    interface dmaCsrReq  = csrReqIfc;
 
     interface rawPcie = dmac.rawPcie;
 endmodule
 
+interface RawSimpleDmaController;
+    // User Logic Ifc
 
+    // Raw PCIe interfaces, connected to the Xilinx PCIe IP
+    (* prefix = "" *)        interface RawXilinxPcieIp       rawPcie;
+endinterface
+// Simple Mode For Read-Write Loop Testing, which has no external ports
+module mkRawSimpleDmaController(RawSimpleDmaController);
+    DmaController dmac       <- mkDmaController;
+    DmaSimpleCore simpleCore <- mkDmaSimpleCore;
+    GenericCsr    dummyCsr   <- mkDummyCsr;
+    Vector#(DMA_PATH_NUM, FIFOF#(DataStream)) dataFifo <- replicateM(mkSizedBRAMFIFOF(valueOf(BUS_BOUNDARY)));
+
+    for (DmaPathNo pathIdx = 0; pathIdx < fromInteger(valueOf(DMA_PATH_NUM)); pathIdx = pathIdx + 1 ) begin
+        mkConnection(dataFifo[pathIdx], dmac.c2hDataFifoIn[pathIdx]);
+        mkConnection(dmac.c2hDataFifoOut[pathIdx], dataFifo[pathIdx]);
+        mkConnection(dmac.c2hReqFifoIn[pathIdx], simpleCore.c2hReqFifoOut[pathIdx]);
+    end
+
+    mkConnection(dmac.h2cReqFifoOut, simpleCore.reqFifoIn);
+    mkConnection(dmac.h2cRespFifoIn, simpleCore.respFifoOut);
+
+    mkConnection(simpleCore.externalReqFifoOut, dummyCsr.reqFifoIn);
+    mkConnection(simpleCore.externalRespFifoIn, dummyCsr.respFifoOut);
+
+    interface rawPcie = dmac.rawPcie;
+endmodule

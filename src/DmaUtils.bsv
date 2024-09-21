@@ -31,15 +31,20 @@ module mkChunkComputer (TRXDirection direction, ChunkCompute ifc);
 
     FIFOF#(DmaExtendRequest)  inputFifo  <- mkFIFOF;
     FIFOF#(DmaRequest)        outputFifo <- mkFIFOF;
-    FIFOF#(Tuple2#(DmaExtendRequest, DmaMemAddr))  pipeFifo <- mkFIFOF;
-    // FIFOF#(DmaMemAddr)        tlpCntFifo <- mkSizedFIFOF(valueOf(CHUNK_COMPUTE_LATENCY));
+    FIFOF#(Tuple2#(DmaExtendRequest, DmaReqLen))  pipeFifo <- mkFIFOF;
 
     Reg#(DmaMemAddr) newChunkPtrReg      <- mkReg(0);
-    Reg#(DmaMemAddr) totalLenRemainReg   <- mkReg(0);
+    Reg#(DmaReqLen)  totalLenRemainReg   <- mkReg(0);
     Reg#(Bool)       isSplittingReg      <- mkReg(False);
     
-    Reg#(DmaMemAddr)          tlpMaxSizeReg      <- mkReg(fromInteger(valueOf(DEFAULT_TLP_SIZE)));
+    Reg#(DmaReqLen)           tlpMaxSizeReg      <- mkReg(fromInteger(valueOf(DEFAULT_TLP_SIZE)));
     Reg#(TlpPayloadSizeWidth) tlpMaxSizeWidthReg <- mkReg(fromInteger(valueOf(DEFAULT_TLP_SIZE_WIDTH)));   
+
+    function Bool has4KBoundary(DmaExtendRequest request);
+        let highIdx = request.endAddr >> valueOf(TLog#(BUS_BOUNDARY));
+        let lowIdx = request.startAddr >> valueOf(TLog#(BUS_BOUNDARY));
+        return (highIdx > lowIdx);
+    endfunction
 
     function Bool hasBoundary(DmaExtendRequest request);
         let highIdx = request.endAddr >> tlpMaxSizeWidthReg;
@@ -47,16 +52,10 @@ module mkChunkComputer (TRXDirection direction, ChunkCompute ifc);
         return (highIdx > lowIdx);
     endfunction
 
-    function DmaMemAddr getTlpCnts(DmaExtendRequest request);
-        let highIdx = request.endAddr >> tlpMaxSizeWidthReg;
-        let lowIdx = request.startAddr >> tlpMaxSizeWidthReg;
-        return (highIdx - lowIdx + 1);
-    endfunction
-
-    function DmaMemAddr getOffset(DmaExtendRequest request);
-        // MPS - startAddr % MPS, MPS means MRRS when the module is set to RX mode
-        DmaMemAddr remainderOfMps = zeroExtend(TlpPayloadSize'(request.startAddr[tlpMaxSizeWidthReg-1:0]));
-        DmaMemAddr offsetOfMps = tlpMaxSizeReg - remainderOfMps;    
+    function DmaReqLen getOffset(DmaExtendRequest request);
+        // offset = MPS - startAddr % MPS
+        DmaReqLen remainderOfMps = zeroExtend(TlpPayloadSize'(request.startAddr[tlpMaxSizeWidthReg-1:0]));
+        DmaReqLen offsetOfMps = tlpMaxSizeReg - remainderOfMps;    
         return offsetOfMps;
     endfunction
 
@@ -64,11 +63,14 @@ module mkChunkComputer (TRXDirection direction, ChunkCompute ifc);
         let request = inputFifo.first;
         inputFifo.deq;
         let offset = getOffset(request);
-        let firstLen = (request.length > tlpMaxSizeReg) ? tlpMaxSizeReg : request.length;
-        let firstChunkLen = hasBoundary(request) ? offset : firstLen;
+        let firstChunkLen = tlpMaxSizeReg;
+        if (request.length > tlpMaxSizeReg || has4KBoundary(request)) begin
+            firstChunkLen = offset;
+        end
+        else begin
+            firstChunkLen = request.length;
+        end
         pipeFifo.enq(tuple2(request, firstChunkLen));
-        // let tlpCnt = getTlpCnts(request);
-        // tlpCntFifo.enq(tlpCnt);
     endrule
 
     rule execChunkCompute;
@@ -91,7 +93,7 @@ module mkChunkComputer (TRXDirection direction, ChunkCompute ifc);
                     length    : tlpMaxSizeReg,
                     isWrite   : False
                 });
-                newChunkPtrReg <= newChunkPtrReg + tlpMaxSizeReg;
+                newChunkPtrReg <= newChunkPtrReg + zeroExtend(tlpMaxSizeReg);
                 totalLenRemainReg <= totalLenRemainReg - tlpMaxSizeReg;
             end
         end 
@@ -107,14 +109,13 @@ module mkChunkComputer (TRXDirection direction, ChunkCompute ifc);
             if (!isSplittingNextCycle) begin 
                 pipeFifo.deq; 
             end
-            newChunkPtrReg <= request.startAddr + firstChunkLen;
+            newChunkPtrReg <= request.startAddr + zeroExtend(firstChunkLen);
             totalLenRemainReg <= remainderLength;
         end
     endrule
 
     interface  dmaRequestFifoIn = convertFifoToFifoIn(inputFifo);
     interface  chunkRequestFifoOut = convertFifoToFifoOut(outputFifo);
-    // interface  chunkCntFifoOut  = convertFifoToFifoOut(tlpCntFifo);
 
     interface Put maxReadReqSize;
         method Action put (Tuple2#(TlpPayloadSize, TlpPayloadSizeWidth) mrrsCfg);
@@ -149,16 +150,22 @@ module mkChunkSplit(TRXDirection direction, ChunkSplit ifc);
 
     StreamSplit firstChunkSplitor <- mkStreamSplit;
 
-    Reg#(DmaMemAddr)          tlpMaxSizeReg      <- mkReg(fromInteger(valueOf(DEFAULT_TLP_SIZE)));
+    Reg#(DmaReqLen)           tlpMaxSizeReg      <- mkReg(fromInteger(valueOf(DEFAULT_TLP_SIZE)));
     Reg#(TlpPayloadSizeWidth) tlpMaxSizeWidthReg <- mkReg(fromInteger(valueOf(DEFAULT_TLP_SIZE_WIDTH)));   
     Reg#(DataBeats)           tlpMaxBeatsReg     <- mkReg(fromInteger(valueOf(TDiv#(DEFAULT_TLP_SIZE, BYTE_EN_WIDTH))));
 
-    Reg#(Bool)      isInProcReg <- mkReg(False);
-    Reg#(DataBeats) beatsReg    <- mkReg(0);
+    Reg#(Bool)      isInProcReg  <- mkReg(False);
+    Reg#(Bool)      isInSplitReg <- mkReg(False);
+    Reg#(DataBeats) beatsReg     <- mkReg(0);
 
     Reg#(DmaMemAddr) nextStartAddrReg <- mkReg(0);
-    Reg#(DmaMemAddr) remainLenReg     <- mkReg(0);
-    
+    Reg#(DmaReqLen)  remainLenReg     <- mkReg(0);
+
+    function Bool has4KBoundary(DmaExtendRequest request);
+        let highIdx = request.endAddr >> valueOf(TLog#(BUS_BOUNDARY));
+        let lowIdx = request.startAddr >> valueOf(TLog#(BUS_BOUNDARY));
+        return (highIdx > lowIdx);
+    endfunction
 
     function Bool hasBoundary(DmaExtendRequest request);
         let highIdx = request.endAddr >> tlpMaxSizeWidthReg;
@@ -166,10 +173,10 @@ module mkChunkSplit(TRXDirection direction, ChunkSplit ifc);
         return (highIdx > lowIdx);
     endfunction
 
-    function DmaMemAddr getOffset(DmaExtendRequest request);
+    function DmaReqLen getOffset(DmaExtendRequest request);
         // MPS - startAddr % MPS, MPS means MRRS when the module is set to RX mode
-        DmaMemAddr remainderOfMps = zeroExtend(TlpPayloadSize'(request.startAddr[tlpMaxSizeWidthReg-1:0]));
-        DmaMemAddr offsetOfMps = tlpMaxSizeReg - remainderOfMps;    
+        DmaReqLen remainderOfMps = zeroExtend(TlpPayloadSize'(request.startAddr[tlpMaxSizeWidthReg-1:0]));
+        DmaReqLen offsetOfMps = tlpMaxSizeReg - remainderOfMps;    
         return offsetOfMps;
     endfunction
 
@@ -182,9 +189,14 @@ module mkChunkSplit(TRXDirection direction, ChunkSplit ifc);
             let stream = dataInFifo.first;
             dataInFifo.deq;
             let offset = getOffset(request);
-            let firstLen = (request.length > tlpMaxSizeReg) ? tlpMaxSizeReg : request.length;
-            let firstChunkLen = hasBoundary(request) ? offset : firstLen;
-            // $display($time, "ns SIM INFO @ mkChunkSplit: get first chunkLen, offset %d, remainder %d", offset, TlpPayloadSize'(request.startAddr[tlpMaxSizeWidthReg-1:0]));
+            let firstChunkLen = tlpMaxSizeReg;
+            if (request.length > tlpMaxSizeReg || has4KBoundary(request)) begin
+                firstChunkLen = offset;
+            end
+            else begin
+                firstChunkLen = request.length;
+            end
+            $display($time, "ns SIM INFO @ mkChunkSplit: get first chunkLen, offset %d, remainder %d", offset, TlpPayloadSize'(request.startAddr[tlpMaxSizeWidthReg-1:0]));
             firstChunkSplitor.splitLocationFifoIn.enq(unpack(truncate(firstChunkLen)));
             let firstReq = DmaRequest {
                 startAddr : request.startAddr,
@@ -222,46 +234,51 @@ module mkChunkSplit(TRXDirection direction, ChunkSplit ifc);
         end
         // Start of a TLP, get Req Infos and tag isFirst=True
         if (beatsReg == 0) begin
-            // $display($time, "ns SIM INFO @ mkChunkSplit: start a new chunk, next addr %d, remainBytesLen %d", nextStartAddrReg, remainLenReg);
             stream.isFirst = True;
+            let nextStartAddr = nextStartAddrReg;
+            let remainLen = remainLenReg;
             // The first TLP of chunks
-            if (firstReqPipeFifo.notEmpty) begin
+            if (firstReqPipeFifo.notEmpty && !isInSplitReg) begin
                 let chunkReq = firstReqPipeFifo.first;
                 let oriReq = inputReqPipeFifo.first;
                 firstReqPipeFifo.deq;
                 inputReqPipeFifo.deq;
                 if (chunkReq.length == oriReq.length) begin
-                    nextStartAddrReg <= 0;
-                    remainLenReg     <= 0;
+                    nextStartAddr = 0;
+                    remainLen     = 0;
                 end
                 else begin
-                    nextStartAddrReg <= oriReq.startAddr + chunkReq.length;
-                    remainLenReg     <= oriReq.length - chunkReq.length;
+                    nextStartAddr = oriReq.startAddr + zeroExtend(chunkReq.length);
+                    remainLen     = oriReq.length - chunkReq.length;
                 end
                 reqOutFifo.enq(chunkReq);
             end
             // The following chunks
             else begin  
                 let chunkReq = DmaRequest {
-                    startAddr: nextStartAddrReg,
+                    startAddr: nextStartAddr,
                     length   : tlpMaxSizeReg,
                     isWrite  : True
                 };
-                if (remainLenReg == 0) begin
+                if (!isInSplitReg) begin
                     // Do nothing
                 end
-                else if (remainLenReg <= tlpMaxSizeReg) begin
-                    nextStartAddrReg <= 0;
-                    remainLenReg     <= 0;
-                    chunkReq.length = remainLenReg;
+                else if (remainLen <= tlpMaxSizeReg) begin
+                    chunkReq.length = remainLen;
                     reqOutFifo.enq(chunkReq);
+                    nextStartAddr = 0;
+                    remainLen     = 0;
                 end
                 else begin
-                    nextStartAddrReg <= nextStartAddrReg + tlpMaxSizeReg;
-                    remainLenReg     <= remainLenReg - tlpMaxSizeReg;
+                    nextStartAddr = nextStartAddr + zeroExtend(tlpMaxSizeReg);
+                    remainLen     = remainLen - tlpMaxSizeReg;
                     reqOutFifo.enq(chunkReq);
                 end
             end
+            $display($time, "ns SIM INFO @ mkChunkSplit: debug, next addr %d, remainBytesLen %d", nextStartAddr, remainLen);
+            nextStartAddrReg <= nextStartAddr;
+            remainLenReg <= remainLen;
+            isInSplitReg <= (remainLen != 0);
         end
         
         chunkOutFifo.enq(stream);
@@ -332,7 +349,7 @@ module mkRqDescriptorGenerator#(Bool isWrite)(RqDescriptorGenerator);
             lastByteEn = 0;
         end
         byteEnOutFifo.enq(tuple2(firstByteEn, lastByteEn));
-        // $display($time, "ns SIM INFO @ mkRqDescriptorGenerator: generate, dwcnt %d, start:%d, end:%d, byteCnt:%d ", dwCnt, exReq.startAddr, exReq.endAddr, exReq.length);
+        $display($time, "ns SIM INFO @ mkRqDescriptorGenerator: generate desc, tag %d, dwcnt %d, start:%d, end:%d, byteCnt:%d ", exReq.tag, dwCnt, exReq.startAddr, exReq.endAddr, exReq.length);
     endrule
 
     interface exReqFifoIn = convertFifoToFifoIn(exReqInFifo);

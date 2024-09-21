@@ -127,9 +127,8 @@ module mkC2HReadCore#(DmaPathNo pathIdx)(C2HReadCore);
     RqDescriptorGenerator rqDescGenerator <- mkRqDescriptorGenerator(False);
     
     Reg#(Bool) hasReadOnce <- mkReg(False);
-    // Reg#(DmaMemAddr) recvTlpCntReg <- mkReg(0);
-    Reg#(DmaMemAddr) recvBytesReg  <- mkReg(0);
-    Vector#(SLOT_PER_PATH, Reg#(DmaMemAddr)) chunkBytesRegs <- replicateM(mkReg(0));
+    Reg#(DmaReqLen) recvBytesReg  <- mkReg(0);
+    Vector#(SLOT_PER_PATH, Reg#(DmaReqLen)) chunkBytesRegs <- replicateM(mkReg(0));
 
     // mkConnection(chunkSplitor.chunkCntFifoOut, expectTlpCntFifo);
     mkConnection(reshapeStrad.streamFifoOut, descRemove.streamFifoIn);
@@ -253,7 +252,7 @@ module mkC2HReadCore#(DmaPathNo pathIdx)(C2HReadCore);
         reqInFifo.deq;
         let exReq = DmaExtendRequest {
             startAddr : req.startAddr,
-            endAddr   : req.startAddr + req.length - 1,
+            endAddr   : req.startAddr + zeroExtend(req.length - 1),
             length    : req.length,
             tag       : 0
         };
@@ -268,7 +267,7 @@ module mkC2HReadCore#(DmaPathNo pathIdx)(C2HReadCore);
         let token <- cBuffer.reserve.get;
         let exReq = DmaExtendRequest {
                 startAddr:  req.startAddr,
-                endAddr  :  req.startAddr + req.length - 1,
+                endAddr  :  req.startAddr + zeroExtend(req.length - 1),
                 length   :  req.length,
                 tag      :  convertSlotTokenToTag(token, pathIdx)
             };
@@ -339,7 +338,7 @@ module mkC2HWriteCore#(DmaPathNo pathIdx)(C2HWriteCore);
             let wrReq = wrReqInFifo.first;
             let exReq = DmaExtendRequest {
                 startAddr : wrReq.startAddr,
-                endAddr   : wrReq.startAddr + wrReq.length - 1,
+                endAddr   : wrReq.startAddr + zeroExtend(wrReq.length - 1),
                 length    : wrReq.length,
                 tag       : 0
             };
@@ -360,7 +359,7 @@ module mkC2HWriteCore#(DmaPathNo pathIdx)(C2HWriteCore);
             chunkSplit.chunkReqFifoOut.deq;
             let exReq = DmaExtendRequest {
                 startAddr:  chunkReq.startAddr,
-                endAddr  :  chunkReq.startAddr + chunkReq.length - 1,
+                endAddr  :  chunkReq.startAddr + zeroExtend(chunkReq.length - 1),
                 length   :  chunkReq.length,
                 tag      :  convertSlotTokenToTag(tagReg, pathIdx)
             };
