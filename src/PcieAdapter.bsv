@@ -407,7 +407,7 @@ module mkConvertDataStreamsToStraddleAxis(ConvertDataStreamsToStraddleAxis);
             let axiStream = ReqReqAxiStream {
                 tData  : sendingStream.data | pendingStream.data,
                 tKeep  : -1,
-                tLast  : False,
+                tLast  : True,
                 tUser  : pack(sideBand)
             };
             axiStreamOutFifo.enq(axiStream);

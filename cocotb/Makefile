@@ -5,12 +5,12 @@ include $(ROOT_DIR)/Makefile.base
 VBUILD_DIR = $(BACKEND_DIR)/build 
 VSRC_DIR = $(BACKEND_DIR)/verilog
 
-TARGET = RawDmaController
+TARGET = RawTestDmaController
 TOP_MODULE = mk$(TARGET)
 TOP_FILE = $(TOP_MODULE).v
 VLOG_FILE = $(TB_DIR)/$(TOP_FILE)
 
-TB_CASE = dma_fullypipeline
+TB_CASE = dma_wr_rd
 TB_FILE = $(TB_CASE)_tb.py
 DATE = $(shell date "+%Y%m%d")
 LOG_FILE = $(TB_DIR)/log/$(DATE)_$(TOP_MODULE).log

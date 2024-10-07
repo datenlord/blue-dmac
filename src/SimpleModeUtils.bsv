@@ -45,6 +45,8 @@ module mkDmaSimpleCore(DmaSimpleCore);
         return idx;
     endfunction
 
+    function ActionValieDmaRequest genRequestFromReg(RegFile#(DmaRegIndex, DmaCsrValue) )
+
     rule map;
         let req = internalReqFifo.first;
         internalReqFifo.deq;

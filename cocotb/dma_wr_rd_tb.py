@@ -271,12 +271,12 @@ class TB(object):
         self.rc.make_port().connect(self.dev)
         
         # DMA 
-        self.c2h_write_source_0 = AxiStreamSource(AxiStreamBus.from_prefix(dut, "s_axis_c2h_0"), self.clock, self.resetn, False)
-        self.c2h_desc_source_0 = DescSource(DescBus.from_prefix(dut, "s_desc_c2h_0"),self.clock, self.resetn, False)
-        self.c2h_read_sink_0 = AxiStreamSink(AxiStreamBus.from_prefix(dut, "m_axis_c2h_0"), self.clock, self.resetn, False)
-        self.c2h_write_source_1 = AxiStreamSource(AxiStreamBus.from_prefix(dut, "s_axis_c2h_1"), self.clock, self.resetn, False)
-        self.c2h_desc_source_1 = DescSource(DescBus.from_prefix(dut, "s_desc_c2h_1"), self.clock, self.resetn, False)
-        self.c2h_read_sink_1 = AxiStreamSink(AxiStreamBus.from_prefix(dut, "m_axis_c2h_1"), self.clock, self.resetn, False)
+        # self.c2h_write_source_0 = AxiStreamSource(AxiStreamBus.from_prefix(dut, "s_axis_c2h_0"), self.clock, self.resetn, False)
+        # self.c2h_desc_source_0 = DescSource(DescBus.from_prefix(dut, "s_desc_c2h_0"),self.clock, self.resetn, False)
+        # self.c2h_read_sink_0 = AxiStreamSink(AxiStreamBus.from_prefix(dut, "m_axis_c2h_0"), self.clock, self.resetn, False)
+        # self.c2h_write_source_1 = AxiStreamSource(AxiStreamBus.from_prefix(dut, "s_axis_c2h_1"), self.clock, self.resetn, False)
+        # self.c2h_desc_source_1 = DescSource(DescBus.from_prefix(dut, "s_desc_c2h_1"), self.clock, self.resetn, False)
+        # self.c2h_read_sink_1 = AxiStreamSink(AxiStreamBus.from_prefix(dut, "m_axis_c2h_1"), self.clock, self.resetn, False)
         
         #monitor
         self.rq_monitor = AxiStreamMonitor(AxiStreamBus.from_prefix(dut, "m_axis_rq"), self.clock, self.resetn, False)
@@ -293,44 +293,44 @@ class TB(object):
         await RisingEdge(self.clock)
         self.log.info("Generated DMA RST_N")
             
-    async def send_desc(self, channel, startAddr, length, isWrite):
-        desc = DescTransaction()
-        desc.start_addr = startAddr
-        desc.byte_cnt = length
-        desc.is_write = isWrite
-        if channel == 0:
-            await self.c2h_desc_source_0.send(desc)
-        else:
-            await self.c2h_desc_source_1.send(desc)
+    # async def send_desc(self, channel, startAddr, length, isWrite):
+    #     desc = DescTransaction()
+    #     desc.start_addr = startAddr
+    #     desc.byte_cnt = length
+    #     desc.is_write = isWrite
+    #     if channel == 0:
+    #         await self.c2h_desc_source_0.send(desc)
+    #     else:
+    #         await self.c2h_desc_source_1.send(desc)
     
-    async def send_data(self, channel, data):
-        if channel == 0:
-            await self.c2h_write_source_0.send(data)
-        else:
-            await self.c2h_write_source_1.send(data)
+    # async def send_data(self, channel, data):
+    #     if channel == 0:
+    #         await self.c2h_write_source_0.send(data)
+    #     else:
+    #         await self.c2h_write_source_1.send(data)
             
-    async def recv_data(self, channel):
-        if channel == 0 :
-            data = await self.c2h_read_sink_0.read()
-        else:
-            data = await self.c2h_read_sink_1.read()
-        data = bytes(''.join([chr(item) for item in data]), encoding='UTF-8')
-        return data
+    # async def recv_data(self, channel):
+    #     if channel == 0 :
+    #         data = await self.c2h_read_sink_0.read()
+    #     else:
+    #         data = await self.c2h_read_sink_1.read()
+    #     data = bytes(''.join([chr(item) for item in data]), encoding='UTF-8')
+    #     return data
         
-    async def run_single_write_once(self, channel, addr, data):
-        length = len(data)
-        self.log.info("Conduct DMA single write: addr %d, length %d, char %c", addr, length, data[0])
-        await self.send_desc(channel, addr, length, True)
-        await self.send_data(channel, data)
+    # async def run_single_write_once(self, channel, addr, data):
+    #     length = len(data)
+    #     self.log.info("Conduct DMA single write: addr %d, length %d, char %c", addr, length, data[0])
+    #     await self.send_desc(channel, addr, length, True)
+    #     await self.send_data(channel, data)
     
-    async def run_single_read_once(self, channel, addr, length):
-        self.log.info("Conduct DMA single read: addr %d, length %d", addr, length)
-        await self.send_desc(channel, addr, length, False)
-        data = await self.recv_data(channel)
-        self.log.info("Read data from RootComplex successfully, recv length %d, req length %d", len(data), length)
-        return data
+    # async def run_single_read_once(self, channel, addr, length):
+    #     self.log.info("Conduct DMA single read: addr %d, length %d", addr, length)
+    #     await self.send_desc(channel, addr, length, False)
+    #     data = await self.recv_data(channel)
+    #     self.log.info("Read data from RootComplex successfully, recv length %d, req length %d", len(data), length)
+    #     return data
             
-@cocotb.test(timeout_time=100000000, timeout_unit="ns")
+# @cocotb.test(timeout_time=100000000, timeout_unit="ns")
 async def random_write_test(dut):
 
     tb = TB(dut)
@@ -368,25 +368,30 @@ async def random_read_test(dut):
     await dev.enable_device()
     await dev.set_master()
     
-    mem = tb.rc.mem_pool.alloc_region(1024*1024)
+    mem = tb.rc.mem_pool.alloc_region(1024*1024*1024)
     mem_base = mem.get_absolute_address(0)
     
-    dma_channel = 0
-    for _ in range(100):
-        addr_offset = random.randint(0, 8192)
-        addr = addr_offset + mem_base
-        length = random.randint(0, 8192)
-        char = bytes(random.choice('abcdefghijklmnopqrstuvwxyz'), encoding="UTF-8")
-        mem[addr:addr+length] = char * length
-        data = await tb.run_single_read_once(dma_channel, addr, length)
-        assert data == char * length
+    # dma_channel = 0
+    # for _ in range(100):
+    #     addr_offset = random.randint(0, 8192)
+    #     addr = addr_offset + mem_base
+    #     length = random.randint(0, 8192)
+    #     char = bytes(random.choice('abcdefghijklmnopqrstuvwxyz'), encoding="UTF-8")
+    #     mem[addr:addr+length] = char * length
+    #     data = await tb.run_single_read_once(dma_channel, addr, length)
+    #     assert data == char * length
+    await Timer(10000, units='ns')
+    print(mem[0:128])
+    
+    
+    
 
 tests_dir = os.path.dirname(__file__)
 rtl_dir = tests_dir
 
 
 def test_dma():
-    dut = "mkRawDmaController"
+    dut = "mkRawTestDmaController"
     module = os.path.splitext(os.path.basename(__file__))[0]
     toplevel = dut
 

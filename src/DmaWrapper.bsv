@@ -18,6 +18,7 @@ import DmaUtils::*;
 import DmaC2HPipe::*;
 import DmaH2CPipe::*;
 import SimpleModeUtils::*;
+import TestUtils::*;
 
 // For Bsv User
 // Native Blue-DMA Interface, the addrs in the req should be pa
@@ -302,6 +303,22 @@ module mkRawSimpleDmaController(RawSimpleDmaController);
 
     mkConnection(simpleCore.externalReqFifoOut, dummyCsr.reqFifoIn);
     mkConnection(simpleCore.externalRespFifoIn, dummyCsr.respFifoOut);
+
+    interface rawPcie = dmac.rawPcie;
+endmodule
+
+module mkRawTestDmaController(RawSimpleDmaController);
+    DmaController dmac       <- mkDmaController;
+    TestModule    tm         <- mkTestModule;
+
+    for (DmaPathNo pathIdx = 0; pathIdx < fromInteger(valueOf(DMA_PATH_NUM)); pathIdx = pathIdx + 1 ) begin
+        mkConnection(tm.c2hDataFifoOut[pathIdx], dmac.c2hDataFifoIn[pathIdx]);
+        mkConnection(tm.c2hReqFifoOut[pathIdx], dmac.c2hReqFifoIn[pathIdx]);
+        mkConnection(dmac.c2hDataFifoOut[pathIdx], tm.c2hDataFifoIn[pathIdx]);
+    end
+
+    mkConnection(dmac.h2cReqFifoOut, tm.h2cReqFifoIn);
+    mkConnection(dmac.h2cRespFifoIn, tm.h2cRespFifoOut);
 
     interface rawPcie = dmac.rawPcie;
 endmodule

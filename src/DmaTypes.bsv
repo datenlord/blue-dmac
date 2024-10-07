@@ -215,28 +215,17 @@ typedef TMul#(DMA_INTERNAL_REG_BLOCK, 5) DMA_EX_REG_OFFSET;
 typedef Bit#(TLog#(DMA_INTERNAL_REG_BLOCK)) DmaRegIndex;
 typedef 16  DMA_USING_REG_LEN;
 
-typedef 0  REG_DESC_ADDR_LO_0;
-typedef 1  REG_DESC_ADDR_HI_0;
-typedef 2  REG_DESC_LEN_0;
-typedef 3  REG_DESC_CNTL_0;     // Doorbell 0
+// Engine's Registers
+typedef 1  REG_REQ_VA_LO_OFFSET;     // DmaRequest.startAddr
+typedef 2  REG_REQ_VA_HI_OFFSET;
+typedef 3  REG_REQ_BYTES_OFFSET;     // DmaRequest.length
+typedef 4  REG_RESULT_VA_LO_OFFSET;  // Done flag write back address
+typedef 5  REG_RESULT_VA_HI_OFFSET;
 
-typedef 4  REG_DESC_ADDR_LO_1;
-typedef 5  REG_DESC_ADDR_HI_1;
-typedef 6  REG_DESC_LEN_1;
-typedef 7  REG_DESC_CNTL_1;     // Doorbell 1
+typedef 0  REG_ENGINE_0_OFFSET;      // Doorbell, indicates
+typedef 6  REG_ENGINE_1_OFFSET;
 
-typedef 8  REG_FLAG_ADDR_LO_0;  // request status write back address
-typedef 9  REG_FLAG_ADDR_HI_0;
-
-typedef 10 REG_FLAG_ADDR_LO_1;  // request status write back address
-typedef 11 REG_FLAG_ADDR_HI_1;
-
-typedef 12 REG_VA_HEADER_LO_0;
-typedef 13 REG_VA_HEADER_HI_0;
-typedef 14 REG_VA_HEADER_LO_1;
-typedef 15 REG_VA_HEADER_HI_1;      
-
-// VA-PA Table, allow 512 VA-PA Page Elements, i.e. 2M(4K page) or 1G(2M huge page, recommend configuration)
+// VA-PA Table, allow 512 VA-PA Page Elements, i.e. 2M(4K page, default) or 1G(2M huge page, recommend configuration)
 typedef DMA_INTERNAL_REG_BLOCK PA_NUM;
 typedef TMul#(PA_NUM, 2) DMA_PHY_ADDR_REG_LEN;
 
