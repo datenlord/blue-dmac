@@ -126,7 +126,8 @@ module mkC2HReadCore#(DmaPathNo pathIdx)(C2HReadCore);
     CompletionFifo#(SLOT_PER_PATH, DataStream)  cBuffer <- mkCompletionFifo(valueOf(MAX_STREAM_NUM_PER_COMPLETION));
     RqDescriptorGenerator rqDescGenerator <- mkRqDescriptorGenerator(False);
     
-    Reg#(Bool) hasReadOnce <- mkReg(False);
+    Reg#(Bool) hasReadOnceReg   <- mkReg(False);
+    Reg#(Bool) isStreamValidReg <- mkReg(True);
     Reg#(DmaReqLen) recvBytesReg  <- mkReg(0);
     Vector#(SLOT_PER_PATH, Reg#(DmaReqLen)) chunkBytesRegs <- replicateM(mkReg(0));
 
@@ -142,13 +143,13 @@ module mkC2HReadCore#(DmaPathNo pathIdx)(C2HReadCore);
         Bool isCompleted = False;
         if (sdStream.isDoubleFrame) begin
             PcieTlpCtlIsSopPtr isSopPtr = 0;
-            if (hasReadOnce) begin
+            if (hasReadOnceReg) begin
                 tlpInFifo.deq;
-                hasReadOnce <= False;
+                hasReadOnceReg <= False;
                 isSopPtr = 1;
             end
             else begin
-                hasReadOnce <= True;
+                hasReadOnceReg <= True;
             end
             stream = DataStream {
                 data    : getStraddleData(isSopPtr, sdStream.data),
@@ -161,7 +162,7 @@ module mkC2HReadCore#(DmaPathNo pathIdx)(C2HReadCore);
         end
         else begin
             tlpInFifo.deq;
-            hasReadOnce <= False;
+            hasReadOnceReg <= False;
             stream = DataStream {
                 data    : sdStream.data,
                 byteEn  : sdStream.byteEn,
@@ -172,12 +173,19 @@ module mkC2HReadCore#(DmaPathNo pathIdx)(C2HReadCore);
             isCompleted = sdStream.isCompleted[0]; 
         end
         stream.byteEn = stream.byteEn;
-        reshapeStrad.streamFifoIn.enq(stream);
-        // $display($time, "ns SIM INFO @ mkDmaC2HReadCore%d: recv new stream from straddle adapter, tag: %d, isCompleted:%b" , pathIdx, tag, isCompleted, fshow(stream));
+        Bool isStreamValid = isStreamValidReg;
         if (stream.isFirst) begin
-            tagFifo.enq(tag);
-            completedFifo.enq(isCompleted);
+            PcieRequesterCompleteDescriptor desc = unpack(truncate(stream.data));
+            isStreamValid = (desc.errorcode == 0);
+        end 
+        if (isStreamValid) begin
+            reshapeStrad.streamFifoIn.enq(stream);
+            if (stream.isFirst) begin
+                tagFifo.enq(tag);
+                completedFifo.enq(isCompleted);
+            end
         end
+        isStreamValidReg <= isStreamValid;
         // $display("parse from straddle", fshow(stream));
     endrule
 

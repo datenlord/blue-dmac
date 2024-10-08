@@ -386,7 +386,7 @@ rtl_dir = tests_dir
 
 
 def test_dma():
-    dut = "mkRawDmaController"
+    dut = "mkRawBypassDmaController"
     module = os.path.splitext(os.path.basename(__file__))[0]
     toplevel = dut
 
