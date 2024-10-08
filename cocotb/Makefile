@@ -5,7 +5,8 @@ include $(ROOT_DIR)/Makefile.base
 VBUILD_DIR = $(BACKEND_DIR)/build 
 VSRC_DIR = $(BACKEND_DIR)/verilog
 
-TARGET = RawTestDmaController
+#MODULE List: mkRawSimpleDmaController mkRawBypassDmaController mkRawTestDmaController
+TARGET = RawBypassDmaController
 TOP_MODULE = mk$(TARGET)
 TOP_FILE = $(TOP_MODULE).v
 VLOG_FILE = $(TB_DIR)/$(TOP_FILE)

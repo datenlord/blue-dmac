@@ -30,6 +30,9 @@ interface DmaController;
 
     interface FifoIn#(CsrResponse)  h2cRespFifoIn;
     interface FifoOut#(CsrRequest)  h2cReqFifoOut;
+
+    interface FifoIn#(CsrResponse)  innerRespFifoIn;
+    interface FifoOut#(CsrRequest)  innerReqFifoOut;
  
     // Raw PCIe interfaces, connected to the Xilinx PCIe IP
     (* prefix = "" *)interface RawXilinxPcieIp       rawPcie;
@@ -90,8 +93,10 @@ module mkDmaController(DmaController);
     interface c2hDataFifoIn  = c2hDataInIfc;
     interface c2hDataFifoOut = c2hDataOutIfc;
     interface c2hReqFifoIn   = c2hReqInIfc;
-    interface h2cRespFifoIn  = h2cPipe.csrRespFifoIn;
-    interface h2cReqFifoOut  = h2cPipe.csrReqFifoOut;
+    interface h2cRespFifoIn  = h2cPipe.userRespFifoIn;
+    interface h2cReqFifoOut  = h2cPipe.userReqFifoOut;
+    interface innerRespFifoIn = h2cPipe.csrRespFifoIn;
+    interface innerReqFifoOut = h2cPipe.csrReqFifoOut;
 
     // Raw PCIe Ifc
     interface RawXilinxPcieIp rawPcie;
@@ -255,6 +260,7 @@ endinterface
 (* synthesize *)
 module mkRawBypassDmaController(RawBypassDmaController);
     DmaController dmac <- mkDmaController;
+    GenericCsr    dummyCsr <- mkDummyCsr;
 
     let dmaWrData0Ifc <- mkFifoInToRawDmaDataSlave(dmac.c2hDataFifoIn[0]);
     let dmaDesc0Ifc   <- mkFifoInToRawDmaReqSlave(dmac.c2hReqFifoIn[0]);
@@ -267,6 +273,9 @@ module mkRawBypassDmaController(RawBypassDmaController);
     let csrRespIfc    <- mkFifoInToRawCsrClient(dmac.h2cRespFifoIn);
     let csrReqIfc     <- mkFifoOutToRawCsrMaster(dmac.h2cReqFifoOut);
 
+    mkConnection(dmac.innerReqFifoOut, dummyCsr.reqFifoIn);
+    mkConnection(dummyCsr.respFifoOut, dmac.innerRespFifoIn);
+    
     interface dmaWrData0 = dmaWrData0Ifc;
     interface dmaDesc0   = dmaDesc0Ifc;  
     interface dmaRdData0 = dmaRdData0Ifc;
@@ -298,11 +307,11 @@ module mkRawSimpleDmaController(RawSimpleDmaController);
         mkConnection(dmac.c2hReqFifoIn[pathIdx], simpleCore.c2hReqFifoOut[pathIdx]);
     end
 
-    mkConnection(dmac.h2cReqFifoOut, simpleCore.reqFifoIn);
-    mkConnection(dmac.h2cRespFifoIn, simpleCore.respFifoOut);
+    mkConnection(dmac.innerReqFifoOut, simpleCore.reqFifoIn);
+    mkConnection(dmac.innerRespFifoIn, simpleCore.respFifoOut);
 
-    mkConnection(simpleCore.externalReqFifoOut, dummyCsr.reqFifoIn);
-    mkConnection(simpleCore.externalRespFifoIn, dummyCsr.respFifoOut);
+    mkConnection(dmac.h2cReqFifoOut, dummyCsr.reqFifoIn);
+    mkConnection(dmac.h2cRespFifoIn, dummyCsr.respFifoOut);
 
     interface rawPcie = dmac.rawPcie;
 endmodule
@@ -310,6 +319,7 @@ endmodule
 module mkRawTestDmaController(RawSimpleDmaController);
     DmaController dmac       <- mkDmaController;
     TestModule    tm         <- mkTestModule;
+    GenericCsr    dummyCsr   <- mkDummyCsr;
 
     for (DmaPathNo pathIdx = 0; pathIdx < fromInteger(valueOf(DMA_PATH_NUM)); pathIdx = pathIdx + 1 ) begin
         mkConnection(tm.c2hDataFifoOut[pathIdx], dmac.c2hDataFifoIn[pathIdx]);
@@ -317,6 +327,8 @@ module mkRawTestDmaController(RawSimpleDmaController);
         mkConnection(dmac.c2hDataFifoOut[pathIdx], tm.c2hDataFifoIn[pathIdx]);
     end
 
+    mkConnection(dmac.innerReqFifoOut, dummyCsr.reqFifoIn);
+    mkConnection(dummyCsr.respFifoOut, dmac.innerRespFifoIn);
     mkConnection(dmac.h2cReqFifoOut, tm.h2cReqFifoIn);
     mkConnection(dmac.h2cRespFifoIn, tm.h2cRespFifoOut);
 

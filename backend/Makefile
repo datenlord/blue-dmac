@@ -9,7 +9,8 @@ LOGFILE ?= run.log
 RUNTOPHASE ?= place # synth place route all
 PARTNAME = xcvu13p-fhgb2104-2-i
 TARGETFILE ?= ../src/DmaWrapper.bsv
-TOPMODULE ?= mkRawTestDmaController
+#MODULE List: mkRawSimpleDmaController mkRawBypassDmaController mkRawTestDmaController
+TOPMODULE ?= mkRawSimpleDmaController
 
 export TOP = $(TOPMODULE)
 export RTL = $(VLOGDIR)

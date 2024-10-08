@@ -15,10 +15,20 @@ typedef 2 IDEA_CC_CSR_DWORD_CNT;
 typedef 4 IDEA_BYTE_CNT_OF_CSR;
 typedef 4 IDEA_FIRST_BE_HIGH_VALID_PTR_OF_CSR;
 
+function CsrResponse getEmptyCsrResponse();
+    return CsrResponse {
+        addr  : 0,
+        value : 0
+    };
+endfunction
+
 interface DmaH2CPipe;
-    // User Logic Ifc
+    // DMA Internal Csr
     interface FifoOut#(CsrRequest)  csrReqFifoOut;
     interface FifoIn#(CsrResponse)  csrRespFifoIn;
+    // User Ifc
+    interface FifoOut#(CsrRequest)  userReqFifoOut;
+    interface FifoIn#(CsrResponse) userRespFifoIn;
     // Pcie Adapter Ifc
     interface FifoIn#(DataStream)  tlpDataFifoIn;
     interface FifoOut#(DataStream) tlpDataFifoOut;
@@ -33,6 +43,9 @@ module mkDmaH2CPipe(DmaH2CPipe);
 
     FIFOF#(CsrRequest)   reqOutFifo   <- mkFIFOF;
     FIFOF#(CsrResponse)  respInFifo   <- mkFIFOF;
+
+    FIFOF#(CsrRequest)   userOutFifo   <- mkFIFOF;
+    FIFOF#(CsrResponse)  userInFifo    <- mkFIFOF;
 
     FIFOF#(Tuple2#(CsrRequest, PcieCompleterRequestDescriptor)) pendingFifo <- mkSizedFIFOF(valueOf(CMPL_NPREQ_INFLIGHT_NUM));
 
@@ -54,13 +67,6 @@ module mkDmaH2CPipe(DmaH2CPipe);
     function DmaCsrAddr getCsrAddrFromCqDescriptor(PcieCompleterRequestDescriptor descriptor);
         // Only care about low bits, because the offset is allocated. 
         let addr = getAddrLowBits(zeroExtend(descriptor.address), descriptor.barAperture);
-        // Only support one BAR now, no operation
-        if (descriptor.barId == 0) begin
-            addr = addr;
-        end
-        else begin
-            addr = 0;
-        end
         return truncate(addr);
     endfunction
 
@@ -83,7 +89,12 @@ module mkDmaH2CPipe(DmaH2CPipe);
                             value     : wrValue,
                             isWrite   : True
                         };
-                        reqOutFifo.enq(req);
+                        if (descriptor.barId == 0) begin
+                            reqOutFifo.enq(req);
+                        end
+                        else if (descriptor.barId == 1) begin
+                            userOutFifo.enq(req);
+                        end
                     end
                     else begin
                         $display($time, "ns SIM INFO @ mkDmaH2CPipe: Invalid wrReq with Addr %h, data %h", wrAddr << valueOf(TLog#(DWORD_BYTES)), wrValue);
@@ -99,7 +110,12 @@ module mkDmaH2CPipe(DmaH2CPipe);
                         isWrite   : False
                     };
                     $display($time, "ns SIM INFO @ mkDmaH2CPipe: Valid rdReq with Addr %h", rdAddr << valueOf(TLog#(DWORD_BYTES)));
-                    reqOutFifo.enq(req);
+                    if (descriptor.barId == 0) begin
+                        reqOutFifo.enq(req);
+                    end
+                    else if (descriptor.barId == 1) begin
+                        userOutFifo.enq(req);
+                    end
                     pendingFifo.enq(tuple2(req, descriptor));
                 end
                 default: illegalPcieReqCntReg <= illegalPcieReqCntReg + 1;
@@ -108,10 +124,17 @@ module mkDmaH2CPipe(DmaH2CPipe);
     endrule
 
     rule genTlp;
-        let resp = respInFifo.first;
+        CsrResponse resp = getEmptyCsrResponse;
+        if (respInFifo.notEmpty) begin
+            resp = respInFifo.first;
+            respInFifo.deq;
+        end
+        else if (userInFifo.notEmpty) begin
+            resp = userInFifo.first;
+            userInFifo.deq;
+        end
         let addr = resp.addr;
         let value = resp.value;
-        respInFifo.deq;
         let {req, cqDescriptor} = pendingFifo.first;
         if (addr == req.addr) begin
             pendingFifo.deq;
@@ -150,9 +173,12 @@ module mkDmaH2CPipe(DmaH2CPipe);
         end
     endrule
 
-    // User Logic Ifc
+    // DMA Csr Ifc
     interface csrReqFifoOut  = convertFifoToFifoOut(reqOutFifo);
     interface csrRespFifoIn  = convertFifoToFifoIn(respInFifo);
+    // User Ifc
+    interface userReqFifoOut = convertFifoToFifoOut(userOutFifo);
+    interface userRespFifoIn = convertFifoToFifoIn(userInFifo);
     // Pcie Adapter Ifc
     interface tlpDataFifoIn  = convertFifoToFifoIn(tlpInFifo);
     interface tlpDataFifoOut = convertFifoToFifoOut(tlpOutFifo);

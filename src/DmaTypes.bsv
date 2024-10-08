@@ -209,7 +209,6 @@ typedef Bit#(TLog#(DMA_INTERNAL_REG_BLOCK_NUM)) DmaRegBlockIdx;
 
 typedef TMul#(DMA_INTERNAL_REG_BLOCK, 1) DMA_PA_TABLE0_OFFSET;
 typedef TMul#(DMA_INTERNAL_REG_BLOCK, 3) DMA_PA_TABLE1_OFFSET;
-typedef TMul#(DMA_INTERNAL_REG_BLOCK, 5) DMA_EX_REG_OFFSET;
 
 // Control Reg offset of Block 0
 typedef Bit#(TLog#(DMA_INTERNAL_REG_BLOCK)) DmaRegIndex;
@@ -232,6 +231,8 @@ typedef TMul#(PA_NUM, 2) DMA_PHY_ADDR_REG_LEN;
 typedef Bit#(TLog#(PA_NUM)) PaBramAddr;
 typedef 2 PA_TABLE0_BLOCK_OFFSET;
 typedef 4 PA_TABLE1_BLOCK_OFFSET;
+
+typedef 1 IS_HUGE_PAGE;
 
 typedef 4096 PAGE_SIZE;
 typedef TLog#(PAGE_SIZE) PAGE_SIZE_WIDTH;

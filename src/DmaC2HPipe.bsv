@@ -175,7 +175,7 @@ module mkC2HReadCore#(DmaPathNo pathIdx)(C2HReadCore);
         stream.byteEn = stream.byteEn;
         Bool isStreamValid = isStreamValidReg;
         if (stream.isFirst) begin
-            PcieRequesterCompleteDescriptor desc = truncate(stream.data);
+            PcieRequesterCompleteDescriptor desc = unpack(truncate(stream.data));
             isStreamValid = (desc.errorcode == 0);
         end 
         if (isStreamValid) begin

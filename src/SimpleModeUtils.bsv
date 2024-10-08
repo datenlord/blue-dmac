@@ -16,20 +16,14 @@ interface DmaSimpleCore;
     // from H2C user Ifc, where the addr is already aligned to DWord
     interface FifoIn#(CsrRequest)   reqFifoIn;
     interface FifoOut#(CsrResponse) respFifoOut;
-    // to external peripherals (connect to dummy reg in test)
-    interface FifoIn#(CsrResponse) externalRespFifoIn;
-    interface FifoOut#(CsrRequest) externalReqFifoOut;
     // new dma descriptor (conncet to H2C user Ifc)
     interface Vector#(DMA_PATH_NUM, FifoOut#(DmaRequest))  c2hReqFifoOut;
 endinterface
 
+(* synthesize *)
 module mkDmaSimpleCore(DmaSimpleCore);
-    FIFOF#(CsrRequest)  internalReqFifo  <- mkFIFOF;
-    FIFOF#(CsrRequest)  externalReqFifo  <- mkFIFOF;
-
-    FIFOF#(CsrResponse) internalRespFifo <- mkFIFOF;
-    FIFOF#(CsrResponse) externalRespFifo <- mkFIFOF;
-    FIFOF#(CsrResponse) tempRespFifo     <- mkFIFOF;
+    FIFOF#(CsrRequest)  reqFifo  <- mkFIFOF;
+    FIFOF#(CsrResponse) respFifo <- mkFIFOF;
 
     RegFile#(DmaRegIndex, DmaCsrValue) controlRegFile <- mkRegFileFull; 
 
@@ -45,24 +39,19 @@ module mkDmaSimpleCore(DmaSimpleCore);
         return idx;
     endfunction
 
-    function ActionValieDmaRequest genRequestFromReg(RegFile#(DmaRegIndex, DmaCsrValue) )
-
     rule map;
-        let req = internalReqFifo.first;
-        internalReqFifo.deq;
+        let req = reqFifo.first;
+        reqFifo.deq;
         let blockIdx = getRegBlockIdx(req.addr);
         DmaRegIndex regIdx = truncate(req.addr);
         // Write Request
         if (req.isWrite) begin
             // Block 0 : DMA Inner Ctrl Regs
             if (blockIdx == 0) begin
-                if (regIdx == fromInteger(valueOf(REG_DESC_CNTL_0))) begin
-                    let addrLo = controlRegFile.sub(fromInteger(valueOf(REG_DESC_ADDR_LO_0)));
-                    let addrHi = controlRegFile.sub(fromInteger(valueOf(REG_DESC_ADDR_HI_0)));
-                    let length  = controlRegFile.sub(fromInteger(valueOf(REG_DESC_LEN_0)));
-                    let vaHeaderLo = controlRegFile.sub(fromInteger(valueOf(REG_VA_HEADER_LO_0)));
-                    let vaHeaderHi = controlRegFile.sub(fromInteger(valueOf(REG_VA_HEADER_HI_0)));
-                    let vaHeader = doubleExtend(vaHeaderLo, vaHeaderHi);
+                if (regIdx == fromInteger(valueOf(REG_ENGINE_0_OFFSET))) begin
+                    let addrLo = controlRegFile.sub(fromInteger(valueOf(TAdd#(REG_ENGINE_0_OFFSET, REG_REQ_VA_LO_OFFSET))));
+                    let addrHi = controlRegFile.sub(fromInteger(valueOf(TAdd#(REG_ENGINE_0_OFFSET, REG_REQ_VA_HI_OFFSET))));
+                    let length  = controlRegFile.sub(fromInteger(valueOf(TAdd#(REG_ENGINE_0_OFFSET, REG_REQ_BYTES_OFFSET))));
                     Bool isWrite = unpack(truncate(req.value));
                     let desc = DmaRequest {
                         startAddr: doubleExtend(addrLo, addrHi),
@@ -71,16 +60,12 @@ module mkDmaSimpleCore(DmaSimpleCore);
                     };
                     if (desc.startAddr > 0) begin
                         paTableBram[0].vaReqFifoIn.enq(desc);
-                        paTableBram[0].vaHeader.put(vaHeader);
                     end
                 end
-                else if (regIdx == fromInteger(valueOf(REG_DESC_CNTL_1))) begin
-                    let addrLo = controlRegFile.sub(fromInteger(valueOf(REG_DESC_ADDR_LO_1)));
-                    let addrHi = controlRegFile.sub(fromInteger(valueOf(REG_DESC_ADDR_HI_1)));
-                    let length  = controlRegFile.sub(fromInteger(valueOf(REG_DESC_LEN_1)));
-                    let vaHeaderLo = controlRegFile.sub(fromInteger(valueOf(REG_VA_HEADER_LO_1)));
-                    let vaHeaderHi = controlRegFile.sub(fromInteger(valueOf(REG_VA_HEADER_HI_1)));
-                    let vaHeader = doubleExtend(vaHeaderLo, vaHeaderHi);
+                else if (regIdx == fromInteger(valueOf(REG_ENGINE_1_OFFSET))) begin
+                    let addrLo = controlRegFile.sub(fromInteger(valueOf(TAdd#(REG_ENGINE_1_OFFSET, REG_REQ_VA_LO_OFFSET))));
+                    let addrHi = controlRegFile.sub(fromInteger(valueOf(TAdd#(REG_ENGINE_1_OFFSET, REG_REQ_VA_HI_OFFSET))));
+                    let length  = controlRegFile.sub(fromInteger(valueOf(TAdd#(REG_ENGINE_1_OFFSET, REG_REQ_BYTES_OFFSET))));
                     Bool isWrite = unpack(truncate(req.value));
                     let desc = DmaRequest {
                         startAddr: doubleExtend(addrLo, addrHi),
@@ -89,7 +74,6 @@ module mkDmaSimpleCore(DmaSimpleCore);
                     };
                     if (desc.startAddr > 0) begin
                         paTableBram[1].vaReqFifoIn.enq(desc);
-                        paTableBram[1].vaHeader.put(vaHeader);
                     end
                 end
                 // if not doorbell, write the register
@@ -107,7 +91,7 @@ module mkDmaSimpleCore(DmaSimpleCore);
                 paTableBram[0].paSetFifoIn.enq(vaReq);
             end
             // Block 3~4 : Channel 1 Va-Pa Table
-            else if (blockIdx <= fromInteger(valueOf(PA_TABLE1_BLOCK_OFFSET))) begin
+            else begin
                 let vaReq = CsrRequest {
                     addr    : req.addr - fromInteger(valueOf(DMA_PA_TABLE1_OFFSET)),
                     value   : req.value,
@@ -115,64 +99,29 @@ module mkDmaSimpleCore(DmaSimpleCore);
                 };
                 paTableBram[1].paSetFifoIn.enq(vaReq);
             end
-            // Block 5~N : External Peripherals Regs
-            else begin
-                req.addr = req.addr - fromInteger(valueOf(DMA_EX_REG_OFFSET));
-                externalReqFifo.enq(req);
-            end
         end
         // Read Request
         else begin
-            if (blockIdx == 0) begin
-                if (regIdx <= fromInteger(valueOf(DMA_USING_REG_LEN))) begin
-                    let value = controlRegFile.sub(regIdx);
-                    let resp = CsrResponse {
-                        addr  : req.addr,
-                        value : value
-                    };
-                    tempRespFifo.enq(resp);
-                end
-                else begin
-                    let resp = CsrResponse {
-                        addr  : req.addr,
-                        value : 0
-                    };
-                    tempRespFifo.enq(resp);
-                end
-            end
-            else if (blockIdx > fromInteger(valueOf(PA_TABLE1_BLOCK_OFFSET))) begin
-                req.addr = req.addr - fromInteger(valueOf(DMA_EX_REG_OFFSET));
-                externalReqFifo.enq(req);
+            if (blockIdx == 0 && regIdx <= fromInteger(valueOf(DMA_USING_REG_LEN))) begin
+                let value = controlRegFile.sub(regIdx);
+                let resp = CsrResponse {
+                    addr  : req.addr,
+                    value : value
+                };
+                respFifo.enq(resp);
             end
             else begin
                 let resp = CsrResponse {
                     addr  : req.addr,
                     value : 0
                 };
-                tempRespFifo.enq(resp);
+                respFifo.enq(resp);
             end
         end
     endrule
 
-    rule muxResp;
-        if (tempRespFifo.notEmpty) begin
-            tempRespFifo.deq;
-            internalRespFifo.enq(tempRespFifo.first);
-        end
-        else if (externalRespFifo.notEmpty) begin
-            externalRespFifo.deq;
-            let extResp = externalRespFifo.first;
-            extResp.addr = extResp.addr + fromInteger(valueOf(DMA_EX_REG_OFFSET));
-            internalRespFifo.enq(extResp);
-        end
-    endrule
-
-    interface reqFifoIn   = convertFifoToFifoIn(internalReqFifo);
-    interface respFifoOut = convertFifoToFifoOut(internalRespFifo);
-
-    interface externalReqFifoOut = convertFifoToFifoOut(externalReqFifo);
-    interface externalRespFifoIn = convertFifoToFifoIn(externalRespFifo);
-
+    interface reqFifoIn   = convertFifoToFifoIn(reqFifo);
+    interface respFifoOut = convertFifoToFifoOut(respFifo);
     interface c2hReqFifoOut = c2hReqFifoOutIfc;
 endmodule
 
@@ -184,17 +133,15 @@ interface PhyAddrBram;
     interface FifoOut#(DmaRequest) paReqFifoOut;
     // va-pa table set
     interface FifoIn#(CsrRequest)  paSetFifoIn;
-    interface Put#(DmaMemAddr)     vaHeader;
 endinterface
 
 // This module does not check if the request address is valid(in MR)
+(* synthesize *)
 module mkPhyAddrBram(PhyAddrBram);
     FIFOF#(DmaRequest) vaReqFifo <- mkFIFOF;
     FIFOF#(DmaRequest) paReqFifo <- mkFIFOF;
     FIFOF#(CsrRequest) paSetFifo <- mkFIFOF;
     FIFOF#(DmaRequest) pendingFifo <- mkSizedFIFOF(valueOf(BRAM_LATENCY));
-
-    Reg#(DmaMemAddr) vaHeaderReg <- mkReg(0);
 
     BRAM1Port#(PaBramAddr, DmaCsrValue) phyAddrLoBram <- mkBRAM1Server(defaultValue);
     BRAM1Port#(PaBramAddr, DmaCsrValue) phyAddrHiBram <- mkBRAM1Server(defaultValue);
@@ -203,13 +150,20 @@ module mkPhyAddrBram(PhyAddrBram);
         return unpack(addr[0]);
     endfunction
 
+    // The Csr Address map to Bram Address. As 0:pa_lo[0], 1:pa_hi[0], 2:pa_lo[1], 3:pa_hi[1],..., csrAddr:pa_lo[csrAddr/2].
     function PaBramAddr convertCsrAddrToBramAddr(DmaCsrAddr csrAddr);
         let addr = csrAddr >> 1;
         return truncate(addr);
     endfunction
 
     function PaBramAddr convertDmaAddrToBramAddr(DmaMemAddr dmaAddr);
-        let pageIdx = (dmaAddr - vaHeaderReg) >> valueOf(HUGE_PAGE_SIZE_WIDTH);
+        DmaMemAddr pageIdx = 0;
+        if (valueOf(IS_HUGE_PAGE) > 0) begin
+            pageIdx = (dmaAddr) >> valueOf(HUGE_PAGE_SIZE_WIDTH);
+        end
+        else begin
+            pageIdx = (dmaAddr) >> valueOf(PAGE_SIZE_WIDTH);
+        end
         return truncate(pageIdx);
     endfunction
 
@@ -218,22 +172,16 @@ module mkPhyAddrBram(PhyAddrBram);
         if (paSetFifo.notEmpty) begin
             let paSet = paSetFifo.first;
             let bramAddr = convertCsrAddrToBramAddr(paSet.addr);
-            if (isLoAddr(paSet.addr)) begin
-                let bramReq = BRAMRequest {
+            let bramReq = BRAMRequest {
                     write   : True,
                     responseOnWrite : False,
                     address : bramAddr,
                     datain  : paSet.value
                 };
+            if (isLoAddr(paSet.addr)) begin
                 phyAddrLoBram.portA.request.put(bramReq);
             end
             else begin
-                let bramReq = BRAMRequest {
-                    write   : True,
-                    responseOnWrite : False,
-                    address : bramAddr,
-                    datain  : paSet.value
-                };
                 phyAddrHiBram.portA.request.put(bramReq);
             end
         end
@@ -265,11 +213,6 @@ module mkPhyAddrBram(PhyAddrBram);
     interface vaReqFifoIn  = convertFifoToFifoIn(vaReqFifo);
     interface paReqFifoOut = convertFifoToFifoOut(paReqFifo);
     interface paSetFifoIn  = convertFifoToFifoIn(paSetFifo);
-    interface Put vaHeader;
-        method Action put(DmaMemAddr vaHeadAddr);
-            vaHeaderReg <= vaHeadAddr;
-        endmethod
-    endinterface
 endmodule
 
 typedef 12 DUMMY_ADDR_WIDTH;
