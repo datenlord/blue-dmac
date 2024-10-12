@@ -116,6 +116,7 @@ module mkCompleterAxiStreamAdapter(CompleterAxiStreamAdapter);
                 isEopPtrs : replicate(0), 
                 isEop     : 1
             };
+            isEop.isEopPtrs[0] = truncate(convertByteEn2DwordPtr(stream.byteEn));
             // Do not enable parity check in the core
             let sideBand = PcieCompleterCompleteSideBandFrame {
                 parity      : 0,  

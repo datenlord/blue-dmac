@@ -9,7 +9,7 @@ import DmaTypes::*;
 import StreamUtils::*;
 
 function Bit#(TMul#(2,n)) doubleExtend(Bit#(n) lo, Bit#(n) hi) provisos(Add#(1, _a, n), Add#(_b, n, TMul#(2, n)));
-    return zeroExtend(lo) & (zeroExtend(hi) << valueOf(n));
+    return zeroExtend(lo) | (zeroExtend(hi) << valueOf(n));
 endfunction
 
 interface DmaSimpleCore;
@@ -39,6 +39,35 @@ module mkDmaSimpleCore(DmaSimpleCore);
         return idx;
     endfunction
 
+    function Tuple3#(DmaRegIndex, DmaRegIndex, DmaRegIndex) getDescRegIdxs(DmaPathNo pathIdx);
+        DmaRegIndex baseRegIdx = 0;
+        Tuple3#(DmaRegIndex, DmaRegIndex, DmaRegIndex) result = tuple3(0, 0, 0);
+        if (pathIdx == 0) 
+            result = tuple3(fromInteger(valueOf(TAdd#(REG_ENGINE_0_OFFSET, REG_REQ_VA_LO_OFFSET))),
+                        fromInteger(valueOf(TAdd#(REG_ENGINE_0_OFFSET, REG_REQ_VA_HI_OFFSET))),
+                        fromInteger(valueOf(TAdd#(REG_ENGINE_0_OFFSET, REG_REQ_BYTES_OFFSET))));
+        else if (pathIdx == 1)
+            result = tuple3(fromInteger(valueOf(TAdd#(REG_ENGINE_1_OFFSET, REG_REQ_VA_LO_OFFSET))),
+                        fromInteger(valueOf(TAdd#(REG_ENGINE_1_OFFSET, REG_REQ_VA_HI_OFFSET))),
+                        fromInteger(valueOf(TAdd#(REG_ENGINE_1_OFFSET, REG_REQ_BYTES_OFFSET))));
+        return result;
+    endfunction
+    
+    function ActionValue#(DmaRequest) genVaReq(RegFile#(DmaRegIndex, DmaCsrValue) regFile, DmaPathNo pathIdx, Bool isWrite);
+        actionvalue
+            let {addrLoIdx, addrHiIdx, lenIdx} = getDescRegIdxs(pathIdx);
+                let addrLo = regFile.sub(addrLoIdx);
+                let addrHi = regFile.sub(addrHiIdx);
+                let length  = regFile.sub(lenIdx);
+            let desc = DmaRequest {
+                startAddr : doubleExtend(addrLo, addrHi),
+                length    : length,
+                isWrite   : isWrite
+            };
+            return desc;
+        endactionvalue
+    endfunction
+        
     rule map;
         let req = reqFifo.first;
         reqFifo.deq;
@@ -48,37 +77,18 @@ module mkDmaSimpleCore(DmaSimpleCore);
         if (req.isWrite) begin
             // Block 0 : DMA Inner Ctrl Regs
             if (blockIdx == 0) begin
-                if (regIdx == fromInteger(valueOf(REG_ENGINE_0_OFFSET))) begin
-                    let addrLo = controlRegFile.sub(fromInteger(valueOf(TAdd#(REG_ENGINE_0_OFFSET, REG_REQ_VA_LO_OFFSET))));
-                    let addrHi = controlRegFile.sub(fromInteger(valueOf(TAdd#(REG_ENGINE_0_OFFSET, REG_REQ_VA_HI_OFFSET))));
-                    let length  = controlRegFile.sub(fromInteger(valueOf(TAdd#(REG_ENGINE_0_OFFSET, REG_REQ_BYTES_OFFSET))));
-                    Bool isWrite = unpack(truncate(req.value));
-                    let desc = DmaRequest {
-                        startAddr: doubleExtend(addrLo, addrHi),
-                        length   : length,
-                        isWrite  : isWrite
-                    };
+                if (regIdx == fromInteger(valueOf(REG_ENGINE_0_OFFSET)) || regIdx == fromInteger(valueOf(REG_ENGINE_1_OFFSET))) begin
+                    DmaPathNo pathIdx = (regIdx == fromInteger(valueOf(REG_ENGINE_0_OFFSET))) ? 0 : 1;
+                    let desc <- genVaReq(controlRegFile, pathIdx, unpack(truncate(req.value)));
+                    $display($time, "ns SIM INFO @ mkDmaSimpleCore: doorbell%d triggerd, va:%h bytes:%d", pathIdx, desc.startAddr, desc.length);
                     if (desc.startAddr > 0) begin
-                        paTableBram[0].vaReqFifoIn.enq(desc);
-                    end
-                end
-                else if (regIdx == fromInteger(valueOf(REG_ENGINE_1_OFFSET))) begin
-                    let addrLo = controlRegFile.sub(fromInteger(valueOf(TAdd#(REG_ENGINE_1_OFFSET, REG_REQ_VA_LO_OFFSET))));
-                    let addrHi = controlRegFile.sub(fromInteger(valueOf(TAdd#(REG_ENGINE_1_OFFSET, REG_REQ_VA_HI_OFFSET))));
-                    let length  = controlRegFile.sub(fromInteger(valueOf(TAdd#(REG_ENGINE_1_OFFSET, REG_REQ_BYTES_OFFSET))));
-                    Bool isWrite = unpack(truncate(req.value));
-                    let desc = DmaRequest {
-                        startAddr: doubleExtend(addrLo, addrHi),
-                        length   : length,
-                        isWrite  : isWrite
-                    };
-                    if (desc.startAddr > 0) begin
-                        paTableBram[1].vaReqFifoIn.enq(desc);
+                        paTableBram[pathIdx].vaReqFifoIn.enq(desc);
                     end
                 end
                 // if not doorbell, write the register
                 else begin
                     controlRegFile.upd(regIdx, req.value);
+                    $display($time, "ns SIM INFO @ mkDmaSimpleCore: register writing regIdx:%d value:%d", regIdx, req.value);
                 end
             end
             // Block 1~2 : Channel 0 Va-Pa Table
@@ -180,14 +190,18 @@ module mkPhyAddrBram(PhyAddrBram);
                 };
             if (isLoAddr(paSet.addr)) begin
                 phyAddrLoBram.portA.request.put(bramReq);
+                $display($time, "ns SIM INFO @ mkPhyAddrBram: pa writing, va offset:%h mapping pa low:%h", bramAddr, bramReq.datain );
             end
             else begin
                 phyAddrHiBram.portA.request.put(bramReq);
+                $display($time, "ns SIM INFO @ mkPhyAddrBram: pa writing, va offset:%h mapping pa high:%h", bramAddr, bramReq.datain );
             end
+            
         end
         // if is getting phy address
         else begin
             let vaReq = vaReqFifo.first;
+            vaReqFifo.deq;
             let bramReq = BRAMRequest {
                 write   : False,
                 responseOnWrite : False,
@@ -197,15 +211,17 @@ module mkPhyAddrBram(PhyAddrBram);
             phyAddrLoBram.portA.request.put(bramReq);
             phyAddrHiBram.portA.request.put(bramReq);
             pendingFifo.enq(vaReq);
+            $display($time, "ns SIM INFO @ mkPhyAddrBram: receive pa mapping request, va:%h", vaReq.startAddr);
         end
     endrule
 
     rule getPaReq;
         let pa_lo <- phyAddrLoBram.portA.response.get;
         let pa_hi <- phyAddrHiBram.portA.response.get;
-        let pa = zeroExtend(pa_hi << valueOf(DMA_CSR_ADDR_WIDTH)) & zeroExtend(pa_lo);
+        DmaMemAddr pa = doubleExtend(pa_lo, pa_hi);
         let oriReq = pendingFifo.first;
         pendingFifo.deq;
+        $display($time, "ns SIM INFO @ mkPhyAddrBram: got a pa mapping, va:%h pa:%h", oriReq.startAddr, pa);
         oriReq.startAddr = pa;
         paReqFifo.enq(oriReq);
     endrule
@@ -223,6 +239,7 @@ interface GenericCsr;
     interface FifoOut#(CsrResponse)  respFifoOut;
 endinterface
 
+(* synthesize *)
 module mkDummyCsr(GenericCsr);
     FIFOF#(CsrRequest)  reqFifo  <- mkFIFOF;
     FIFOF#(CsrResponse) respFifo <- mkFIFOF;

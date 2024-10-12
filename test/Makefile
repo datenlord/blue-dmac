@@ -1,7 +1,7 @@
 include ../Makefile.base
 
-TESTFILE ?= TestDmaCore.bsv
-TOPMODULE ?= mkChunkComputerTb
+TESTFILE ?= TestSimpleUtils.bsv
+TOPMODULE ?= mkTestSimpleH2CCore
 
 SIMSCRIPT = $(BUILDDIR)/$(TOPMODULE).sh
 

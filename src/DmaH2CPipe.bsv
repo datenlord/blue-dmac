@@ -11,8 +11,8 @@ import PcieAdapter::*;
 import DmaTypes::*;
 
 typedef 1 IDEA_CQ_CSR_DWORD_CNT;
-typedef 2 IDEA_CC_CSR_DWORD_CNT;
-typedef 4 IDEA_BYTE_CNT_OF_CSR;
+typedef 1 IDEA_CC_CSR_DWORD_CNT;
+typedef 4 IDEA_CC_CSR_BYTE_CNT;
 typedef 4 IDEA_FIRST_BE_HIGH_VALID_PTR_OF_CSR;
 
 function CsrResponse getEmptyCsrResponse();
@@ -60,7 +60,7 @@ module mkDmaH2CPipe(DmaH2CPipe);
     Reg#(Bool) isInPacket <- mkReg(False);
     Reg#(UInt#(32)) illegalPcieReqCntReg <- mkReg(0);
 
-    DataBytePtr csrBytes = fromInteger(valueOf(TDiv#(DMA_CSR_DATA_WIDTH, BYTE_WIDTH)));
+    DataBytePtr csrCmplBytes = fromInteger(valueOf(TDiv#(TAdd#(DES_CC_DESCRIPTOR_WIDTH ,DMA_CSR_DATA_WIDTH), BYTE_WIDTH)));
 
     // This function returns DW addr pointing to inner registers, where byteAddr = DWordAddr << 2
     // The registers in the hw are all of 32bit DW type
@@ -106,7 +106,7 @@ module mkDmaH2CPipe(DmaH2CPipe);
                     let rdAddr = getCsrAddrFromCqDescriptor(descriptor);
                     let req = CsrRequest{
                         addr      : rdAddr,
-                        value     : zeroExtend(csrBytes),
+                        value     : 0,
                         isWrite   : False
                     };
                     $display($time, "ns SIM INFO @ mkDmaH2CPipe: Valid rdReq with Addr %h", rdAddr << valueOf(TLog#(DWORD_BYTES)));
@@ -153,20 +153,22 @@ module mkDmaH2CPipe(DmaH2CPipe);
                 dwordCnt        : fromInteger(valueOf(IDEA_CC_CSR_DWORD_CNT)),
                 reserve2        : 0,
                 isLockedReadCmpl: False,
-                byteCnt         : fromInteger(valueOf(IDEA_BYTE_CNT_OF_CSR)),
+                byteCnt         : fromInteger(valueOf(IDEA_CC_CSR_BYTE_CNT)),
                 reserve3        : 0,
                 addrType        : cqDescriptor.addrType,
-                lowerAddr       : truncate(addr)
+                reserve4        : 0,
+                lowerAddr       : truncate(addr << valueOf(TLog#(DWORD_BYTES)))  // Suppose all cq/cc requests are 32 bit aligned
             };
             Data data = zeroExtend(pack(ccDescriptor));
             data = data | (zeroExtend(value) << valueOf(DES_CC_DESCRIPTOR_WIDTH));
             let stream = DataStream {
                 data    : data,
-                byteEn  : convertBytePtr2ByteEn(csrBytes),
+                byteEn  : convertBytePtr2ByteEn(csrCmplBytes),
                 isFirst : True,
                 isLast  : True
             };
             tlpOutFifo.enq(stream);
+            // $display($time, "ns SIM INFO @ mkDmaH2CPipe: output a cmpl tlp", fshow(stream));
         end
         else begin
             $display($time, "ns SIM ERROR @ mkDmaH2CPipe: InValid rdResp with Addr %h, data %h and Expect Addr %h", addr, value, req.addr);

@@ -86,6 +86,7 @@ typedef struct {
     CmplByteCnt     byteCnt;
     ReserveBit6     reserve3;
     AddrType        addrType;
+    ReserveBit1     reserve4;
     CCLowerAddr     lowerAddr;
 } PcieCompleterCompleteDescriptor deriving(Bits, Eq, Bounded, FShow);
 
