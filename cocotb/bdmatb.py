@@ -1,12 +1,6 @@
-#!/usr/bin/env python
-import itertools
 import logging
 import os
 import random
-import queue
-
-import cocotb_test.simulator
-import pytest
 
 import cocotb
 from cocotb.triggers import RisingEdge, FallingEdge, Timer
@@ -27,8 +21,11 @@ DescBus, DescTransaction, DescSource, DescSink, DescMonitor = define_stream("Des
     signals=["start_addr", "byte_cnt", "is_write", "valid", "ready"]
 )
 
-class TB(object):
+class BdmaTb(object):
     def __init__(self, dut, msix=False):
+        self._pcie_init(dut, msix)
+            
+    def _pcie_init(self, dut, msix=False):
         self.dut = dut
 
         self.log = logging.getLogger("cocotb.tb")
@@ -46,7 +43,7 @@ class TB(object):
         cq_straddle = False
         cc_straddle = False
         rq_straddle = True
-        rc_straddle = False
+        rc_straddle = True
         rc_4tlp_straddle = False
 
         self.client_tag = bool(int(os.getenv("CLIENT_TAG", "1")))
@@ -268,7 +265,37 @@ class TB(object):
         dut.cfg_ds_bus_number.setimmediatevalue(0)
         dut.cfg_ds_device_number.setimmediatevalue(0)
 
+        self.dev.functions[0].configure_bar(0, 16*1024*1024)
+        self.dev.functions[0].configure_bar(1, 16*1024, io=True)
+        
         self.rc.make_port().connect(self.dev)
+    
+    async def gen_reset(self):
+        self.resetn.value = 0
+        await RisingEdge(self.clock)
+        await RisingEdge(self.clock)
+        await RisingEdge(self.clock)
+        self.resetn.value = 1
+        await RisingEdge(self.clock)
+        await RisingEdge(self.clock)
+        await RisingEdge(self.clock)
+        self.log.info("Generated DMA RST_N")
+        
+    def gen_random_req(self, channel):
+        low_boundry = channel * 8192
+        high_boundry = (channel + 1) * 8192
+        idxs = random.sample(range(low_boundry, high_boundry), 2)
+        lo_idx, hi_idx = idxs[0], idxs[1] 
+        if (hi_idx < lo_idx):
+            temp = hi_idx
+            hi_idx = lo_idx
+            lo_idx = temp
+        length = hi_idx - lo_idx + 1
+        return (lo_idx, length)   
+    
+class BdmaBypassTb(BdmaTb):
+    def __init__(self, dut, msix=False):
+        super().__init__(dut, msix)
         
         # DMA 
         self.c2h_write_source_0 = AxiStreamSource(AxiStreamBus.from_prefix(dut, "s_axis_c2h_0"), self.clock, self.resetn, False)
@@ -280,18 +307,6 @@ class TB(object):
         
         #monitor
         self.rq_monitor = AxiStreamMonitor(AxiStreamBus.from_prefix(dut, "m_axis_rq"), self.clock, self.resetn, False)
-    
-    #Do not use user_rst but gen rstn for bsv
-    async def gen_reset(self):
-        self.resetn.value = 0
-        await RisingEdge(self.clock)
-        await RisingEdge(self.clock)
-        await RisingEdge(self.clock)
-        self.resetn.value = 1
-        await RisingEdge(self.clock)
-        await RisingEdge(self.clock)
-        await RisingEdge(self.clock)
-        self.log.info("Generated DMA RST_N")
             
     async def send_desc(self, channel, startAddr, length, isWrite):
         desc = DescTransaction()
@@ -319,91 +334,27 @@ class TB(object):
         
     async def run_single_write_once(self, channel, addr, data):
         length = len(data)
-        self.log.info("Conduct DMA single write: addr %d, length %d, char %c", addr, length, data[0])
+        self.log.info("Conduct DMA single write: channel %d addr %d, length %d, char %c", channel, addr, length, data[0])
         await self.send_desc(channel, addr, length, True)
         await self.send_data(channel, data)
     
     async def run_single_read_once(self, channel, addr, length):
-        self.log.info("Conduct DMA single read: addr %d, length %d", addr, length)
+        self.log.info("Conduct DMA single read: channel %d addr %d, length %d", channel, addr, length)
         await self.send_desc(channel, addr, length, False)
         data = await self.recv_data(channel)
         self.log.info("Read data from RootComplex successfully, recv length %d, req length %d", len(data), length)
         return data
             
-@cocotb.test(timeout_time=100000000, timeout_unit="ns")
-async def random_write_test(dut):
-
-    tb = TB(dut)
-    await tb.gen_reset()
-    
-    await tb.rc.enumerate()
-    dev = tb.rc.find_device(tb.dev.functions[0].pcie_id)
-    
-    await dev.enable_device()
-    await dev.set_master()
-    
-    mem = tb.rc.mem_pool.alloc_region(1024*1024)
-    mem_base = mem.get_absolute_address(0)
-    
-    dma_channel = 1
-    for _ in range(10):
-        addr_offset = random.randint(0, 8192)
-        length = random.randint(0, 8192)
-        char = bytes(random.choice('abcdefghijklmnopqrstuvwxyz'), encoding="UTF-8")
-        addr = addr_offset + mem_base
-        data = char * length
-        await tb.run_single_write_once(dma_channel, addr, data)
-        await Timer(100+length, units='ns')
-        assert mem[addr:addr+length] == char * length
-        await RisingEdge(tb.clock)
-    
-@cocotb.test(timeout_time=10000000, timeout_unit="ns")   
-async def random_read_test(dut):
-    tb = TB(dut)
-    await tb.gen_reset()
-    
-    await tb.rc.enumerate()
-    dev = tb.rc.find_device(tb.dev.functions[0].pcie_id)
-    
-    await dev.enable_device()
-    await dev.set_master()
-    
-    mem = tb.rc.mem_pool.alloc_region(1024*1024)
-    mem_base = mem.get_absolute_address(0)
-    
-    dma_channel = 0
-    for _ in range(100):
-        addr_offset = random.randint(0, 8192)
-        addr = addr_offset + mem_base
-        length = random.randint(0, 8192)
-        char = bytes(random.choice('abcdefghijklmnopqrstuvwxyz'), encoding="UTF-8")
-        mem[addr:addr+length] = char * length
-        data = await tb.run_single_read_once(dma_channel, addr, length)
-        assert data == char * length
-
-tests_dir = os.path.dirname(__file__)
-rtl_dir = tests_dir
-
-
-def test_dma():
-    dut = "mkRawBypassDmaController"
-    module = os.path.splitext(os.path.basename(__file__))[0]
-    toplevel = dut
-
-    verilog_sources = [
-        os.path.join(rtl_dir, f"{dut}.v")
-    ]
-
-    sim_build = os.path.join(tests_dir, "sim_build", dut)
-
-    cocotb_test.simulator.run(
-        python_search=[tests_dir],
-        verilog_sources=verilog_sources,
-        toplevel=toplevel,
-        module=module,
-        timescale="1ns/1ps",
-        sim_build=sim_build
-    )
-    
-if __name__ == "__main__":
-    test_dma()
+            
+class BdmaSimpleTb(BdmaTb):
+    def conbine_bar(self, bar):
+        self.ep_bar = bar
+        
+    async def submit_transfer(self, channel, addr, length, isWrite=True):
+        addrLo = addr & 0xFFFFFFFF
+        addrHi = (addr >> 32) & 0xFFFFFFFF
+        base_addr = channel * 6
+        await self.ep_bar.write(base_addr + 1, addrLo.to_bytes(4, byteorder='big', signed=False))
+        await self.ep_bar.write(base_addr + 2, addrHi.to_bytes(4, byteorder='big', signed=False))
+        await self.ep_bar.write(base_addr + 3, length.to_bytes(4, byteorder='big', signed=False))
+        await self.ep_bar.write(base_addr, int(isWrite).to_bytes(4, byteorder='big', signed=False))
