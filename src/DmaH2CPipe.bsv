@@ -78,12 +78,12 @@ module mkDmaH2CPipe(DmaH2CPipe);
             let descriptor  = getDescriptorFromFirstBeat(stream);
             case (descriptor.reqType) 
                 fromInteger(valueOf(MEM_WRITE_REQ)): begin
-                    $display($time, "ns SIM INFO @ mkDmaH2CPipe: MemWrite Detect!");
+                    // $display($time, "ns SIM INFO @ mkDmaH2CPipe: MemWrite Detect!");
                     let firstData = getDataFromFirstBeat(stream);
                     DmaCsrValue wrValue = truncate(firstData);
                     let wrAddr = getCsrAddrFromCqDescriptor(descriptor);
                     if (descriptor.dwordCnt == fromInteger(valueOf(IDEA_CQ_CSR_DWORD_CNT))) begin
-                        $display($time, "ns SIM INFO @ mkDmaH2CPipe: Valid wrReq with Addr %h, data %h", wrAddr << valueOf(TLog#(DWORD_BYTES)), wrValue);
+                        // $display($time, "ns SIM INFO @ mkDmaH2CPipe: Valid wrReq with Addr %d, data %h", wrAddr, wrValue);
                         let req = CsrRequest {
                             addr      : wrAddr,
                             value     : wrValue,
@@ -97,12 +97,12 @@ module mkDmaH2CPipe(DmaH2CPipe);
                         end
                     end
                     else begin
-                        $display($time, "ns SIM INFO @ mkDmaH2CPipe: Invalid wrReq with Addr %h, data %h", wrAddr << valueOf(TLog#(DWORD_BYTES)), wrValue);
+                        $display($time, "ns SIM INFO @ mkDmaH2CPipe: Invalid wrReq with Addr %d, data %h", wrAddr, wrValue);
                         illegalPcieReqCntReg <= illegalPcieReqCntReg + 1;
                     end
                 end
                 fromInteger(valueOf(MEM_READ_REQ)): begin
-                    $display($time, "ns SIM INFO @ mkDmaH2CPipe: MemRead Detect!");
+                    // $display($time, "ns SIM INFO @ mkDmaH2CPipe: MemRead Detect!");
                     let rdAddr = getCsrAddrFromCqDescriptor(descriptor);
                     let req = CsrRequest{
                         addr      : rdAddr,

@@ -88,7 +88,7 @@ module mkDmaSimpleCore(DmaSimpleCore);
                 // if not doorbell, write the register
                 else begin
                     controlRegFile.upd(regIdx, req.value);
-                    $display($time, "ns SIM INFO @ mkDmaSimpleCore: register writing regIdx:%d value:%d", regIdx, req.value);
+                    // $display($time, "ns SIM INFO @ mkDmaSimpleCore: register writing regIdx:%d value:%d", regIdx, req.value);
                 end
             end
             // Block 1~2 : Channel 0 Va-Pa Table
@@ -98,6 +98,7 @@ module mkDmaSimpleCore(DmaSimpleCore);
                     value   : req.value,
                     isWrite : True
                 };
+                // $display($time, "ns SIM INFO @ mkDmaSimpleCore: paTableBram0 writing addr:%d value:%d", vaReq.addr, req.value);
                 paTableBram[0].paSetFifoIn.enq(vaReq);
             end
             // Block 3~4 : Channel 1 Va-Pa Table
@@ -108,6 +109,7 @@ module mkDmaSimpleCore(DmaSimpleCore);
                     isWrite : True
                 };
                 paTableBram[1].paSetFifoIn.enq(vaReq);
+                // $display($time, "ns SIM INFO @ mkDmaSimpleCore: paTableBram1 writing addr:%d value:%d", vaReq.addr, req.value);
             end
         end
         // Read Request
@@ -156,6 +158,8 @@ module mkPhyAddrBram(PhyAddrBram);
     BRAM1Port#(PaBramAddr, DmaCsrValue) phyAddrLoBram <- mkBRAM1Server(defaultValue);
     BRAM1Port#(PaBramAddr, DmaCsrValue) phyAddrHiBram <- mkBRAM1Server(defaultValue);
 
+    DmaMemAddr pageMask = (valueOf(IS_HUGE_PAGE)>0) ? 'h1FFFFF : 'hFFF;
+
     function Bool isLoAddr(DmaCsrAddr addr);
         return unpack(addr[0]);
     endfunction
@@ -181,6 +185,7 @@ module mkPhyAddrBram(PhyAddrBram);
         // if is setting va-pa table
         if (paSetFifo.notEmpty) begin
             let paSet = paSetFifo.first;
+            paSetFifo.deq;
             let bramAddr = convertCsrAddrToBramAddr(paSet.addr);
             let bramReq = BRAMRequest {
                     write   : True,
@@ -190,11 +195,11 @@ module mkPhyAddrBram(PhyAddrBram);
                 };
             if (isLoAddr(paSet.addr)) begin
                 phyAddrLoBram.portA.request.put(bramReq);
-                $display($time, "ns SIM INFO @ mkPhyAddrBram: pa writing, va offset:%h mapping pa low:%h", bramAddr, bramReq.datain );
+                // $display($time, "ns SIM INFO @ mkPhyAddrBram: pa writing, va offset:%d, mapping pa low:%h", bramAddr, bramReq.datain );
             end
             else begin
                 phyAddrHiBram.portA.request.put(bramReq);
-                $display($time, "ns SIM INFO @ mkPhyAddrBram: pa writing, va offset:%h mapping pa high:%h", bramAddr, bramReq.datain );
+                // $display($time, "ns SIM INFO @ mkPhyAddrBram: pa writing, va offset:%d, mapping pa low:%h", bramAddr, bramReq.datain);
             end
             
         end
@@ -211,7 +216,7 @@ module mkPhyAddrBram(PhyAddrBram);
             phyAddrLoBram.portA.request.put(bramReq);
             phyAddrHiBram.portA.request.put(bramReq);
             pendingFifo.enq(vaReq);
-            $display($time, "ns SIM INFO @ mkPhyAddrBram: receive pa mapping request, va:%h", vaReq.startAddr);
+            // $display($time, "ns SIM INFO @ mkPhyAddrBram: receive pa mapping request, va:%h", vaReq.startAddr);
         end
     endrule
 
@@ -222,7 +227,7 @@ module mkPhyAddrBram(PhyAddrBram);
         let oriReq = pendingFifo.first;
         pendingFifo.deq;
         $display($time, "ns SIM INFO @ mkPhyAddrBram: got a pa mapping, va:%h pa:%h", oriReq.startAddr, pa);
-        oriReq.startAddr = pa;
+        oriReq.startAddr = pa | (oriReq.startAddr & pageMask);
         paReqFifo.enq(oriReq);
     endrule
 

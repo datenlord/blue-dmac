@@ -196,7 +196,7 @@ module mkChunkSplit(TRXDirection direction, ChunkSplit ifc);
             else begin
                 firstChunkLen = request.length;
             end
-            $display($time, "ns SIM INFO @ mkChunkSplit: get first chunkLen, offset %d, remainder %d", offset, TlpPayloadSize'(request.startAddr[tlpMaxSizeWidthReg-1:0]));
+            // $display($time, "ns SIM INFO @ mkChunkSplit: get first chunkLen, offset %d, remainder %d", offset, TlpPayloadSize'(request.startAddr[tlpMaxSizeWidthReg-1:0]));
             firstChunkSplitor.splitLocationFifoIn.enq(unpack(truncate(firstChunkLen)));
             let firstReq = DmaRequest {
                 startAddr : request.startAddr,
@@ -275,7 +275,6 @@ module mkChunkSplit(TRXDirection direction, ChunkSplit ifc);
                     reqOutFifo.enq(chunkReq);
                 end
             end
-            $display($time, "ns SIM INFO @ mkChunkSplit: debug, next addr %d, remainBytesLen %d", nextStartAddr, remainLen);
             nextStartAddrReg <= nextStartAddr;
             remainLenReg <= remainLen;
             isInSplitReg <= (remainLen != 0);
@@ -349,7 +348,7 @@ module mkRqDescriptorGenerator#(Bool isWrite)(RqDescriptorGenerator);
             lastByteEn = 0;
         end
         byteEnOutFifo.enq(tuple2(firstByteEn, lastByteEn));
-        $display($time, "ns SIM INFO @ mkRqDescriptorGenerator: generate desc, tag %d, dwcnt %d, start:%d, end:%d, byteCnt:%d ", exReq.tag, dwCnt, exReq.startAddr, exReq.endAddr, exReq.length);
+        // $display($time, "ns SIM INFO @ mkRqDescriptorGenerator: generate desc, tag %d, dwcnt %d, start:%d, end:%d, byteCnt:%d ", exReq.tag, dwCnt, exReq.startAddr, exReq.endAddr, exReq.length);
     endrule
 
     interface exReqFifoIn = convertFifoToFifoIn(exReqInFifo);

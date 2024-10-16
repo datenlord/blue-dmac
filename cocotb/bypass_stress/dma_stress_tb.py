@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-import logging
 import os
 import random
 
@@ -18,25 +17,29 @@ from bdmatb import BdmaBypassTb
 # | Root Complex | <->  | End Pointer |  <->  | Dut(DMAC) |         
 #  --------------        -------------         -----------
 
-async def single_path_random_write_test(pcie_tb, dma_channel, mem):
-    for _ in range(100):
-        addr, length = pcie_tb.gen_random_req(dma_channel)
-        addr = mem.get_absolute_address(addr)
-        char = bytes(random.choice('abcdefghijklmnopqrstuvwxyz'), encoding="UTF-8")
-        data = char * length
-        await pcie_tb.run_single_write_once(dma_channel, addr, data)
-        await Timer(100+length, units='ns')
-        assert mem[addr:addr+length] == data
-            
+def gen_pseudo_data(addr, length):
+    start = int(addr / 4)
+    data = start.to_bytes(4, byteorder='little', signed=False)
+    for i in range(1, int(length/4)):
+        data = data + (start + i).to_bytes(4, byteorder='little', signed=False)
+    return data
 
-async def single_path_random_read_test(pcie_tb, dma_channel, mem):
-    for _ in range(100):
-        addr, length = pcie_tb.gen_random_req(dma_channel)
-        addr = mem.get_absolute_address(addr)
-        char = bytes(random.choice('abcdefghijklmnopqrstuvwxyz'), encoding="UTF-8")
-        mem[addr:addr+length] = char * length
-        data = await pcie_tb.run_single_read_once(dma_channel, addr, length)
-        assert data == char * length
+async def stress_random_write_test(pcie_tb, dma_channel, mem, n):
+    addr = 0
+    length = 0
+    for _ in range(n):
+        length = pcie_tb.gen_random_aligned_len()
+        data = gen_pseudo_data(addr, length)
+        await pcie_tb.run_single_write_once(dma_channel, addr, data)
+        addr = int((addr + length)/4) * 4
+    return addr
+
+async def run_stress_write(pcie_tb, mem):
+    n = 10
+    end = await stress_random_write_test(pcie_tb, 0, mem, n)
+    await Timer(2048 * 2048)
+    for i in range(int(end/4)):
+        assert i == int.from_bytes(mem[i*4:(i+1)*4], byteorder='little', signed=False)
             
 @cocotb.test(timeout_time=100000000, timeout_unit="ns")
 async def step_random_write_test(dut):
@@ -52,22 +55,8 @@ async def step_random_write_test(dut):
     
     mem = tb.rc.mem_pool.alloc_region(1024*1024)
     
-    await single_path_random_write_test(tb, 0, mem)
+    await run_stress_write(tb, mem)
     
-@cocotb.test(timeout_time=10000000, timeout_unit="ns")   
-async def step_random_read_test(dut):
-    tb = BdmaBypassTb(dut)
-    await tb.gen_reset()
-    
-    await tb.rc.enumerate()
-    dev = tb.rc.find_device(tb.dev.functions[0].pcie_id)
-    
-    await dev.enable_device()
-    await dev.set_master()
-    
-    mem = tb.rc.mem_pool.alloc_region(1024*1024)
-    
-    await single_path_random_read_test(tb, 0, mem)
 
 tests_dir = os.path.dirname(__file__)
 rtl_dir = tests_dir

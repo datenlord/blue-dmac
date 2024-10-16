@@ -293,6 +293,12 @@ class BdmaTb(object):
         length = hi_idx - lo_idx + 1
         return (lo_idx, length)   
     
+    def gen_random_len(self):
+        return random.randint(1, 8192)
+    
+    def gen_random_aligned_len(self):
+        return random.randint(1, 2048) * 4
+    
 class BdmaBypassTb(BdmaTb):
     def __init__(self, dut, msix=False):
         super().__init__(dut, msix)
@@ -347,14 +353,74 @@ class BdmaBypassTb(BdmaTb):
             
             
 class BdmaSimpleTb(BdmaTb):
+    def __init__(self, dut, msix=False):
+        super().__init__(dut, msix)
+        
+        # DMA 
+        self.c2h_write_source_0 = AxiStreamSource(AxiStreamBus.from_prefix(dut, "s_axis_c2h_0"), self.clock, self.resetn, False)
+        self.c2h_read_sink_0 = AxiStreamSink(AxiStreamBus.from_prefix(dut, "m_axis_c2h_0"), self.clock, self.resetn, False)
+        self.c2h_write_source_1 = AxiStreamSource(AxiStreamBus.from_prefix(dut, "s_axis_c2h_1"), self.clock, self.resetn, False)
+        self.c2h_read_sink_1 = AxiStreamSink(AxiStreamBus.from_prefix(dut, "m_axis_c2h_1"), self.clock, self.resetn, False)
+        
+    async def send_data(self, channel, data):
+        if channel == 0:
+            await self.c2h_write_source_0.send(data)
+        else:
+            await self.c2h_write_source_1.send(data)
+            
+    async def recv_data(self, channel):
+        if channel == 0 :
+            data = await self.c2h_read_sink_0.read()
+        else:
+            data = await self.c2h_read_sink_1.read()
+        data = bytes(''.join([chr(item) for item in data]), encoding='UTF-8')
+        return data
+        
     def conbine_bar(self, bar):
         self.ep_bar = bar
+    
+    async def write_register(self, addr:int, x:int):
+        x = x & 0xFFFFFFFF
+        self.log.debug("BdmaTb: write register at %d, value %d" % (addr, x))
+        await self.ep_bar.write(addr * 4, x.to_bytes(4, byteorder='little', signed=False))    
+    
+    async def write_pa_table(self, channel, page_offset, pa):
+        base_addr = 512 + channel * 1024
+        page_offset = page_offset & 0x1FF
+        paLo = pa & 0xFFFFFFFF
+        paHi = (pa >> 32) & 0xFFFFFFFF
+        await self.write_register(base_addr + 2*page_offset, paLo)
+        await self.write_register(base_addr + 2*page_offset + 1, paHi)
+        
+
+    async def memory_map(self):
+        self.log.info("BdmaTb: Starting memory map...")
+        await self.write_pa_table(0, 1, 123456)
+        await self.write_pa_table(1, 2, 1)
+        for i in range(512):
+            await self.write_pa_table(0, i, 4096*i)
+            await self.write_pa_table(1, i, 4096*i)
+        await Timer(4 * 512 * 2 * 2, units='ns')
         
     async def submit_transfer(self, channel, addr, length, isWrite=True):
         addrLo = addr & 0xFFFFFFFF
         addrHi = (addr >> 32) & 0xFFFFFFFF
         base_addr = channel * 6
-        await self.ep_bar.write(base_addr + 1, addrLo.to_bytes(4, byteorder='big', signed=False))
-        await self.ep_bar.write(base_addr + 2, addrHi.to_bytes(4, byteorder='big', signed=False))
-        await self.ep_bar.write(base_addr + 3, length.to_bytes(4, byteorder='big', signed=False))
-        await self.ep_bar.write(base_addr, int(isWrite).to_bytes(4, byteorder='big', signed=False))
+        await self.write_register(base_addr + 1, addrLo)
+        await self.write_register(base_addr + 2, addrHi)
+        await self.write_register(base_addr + 3, length)
+        await self.write_register(base_addr, int(isWrite))
+        
+    async def run_single_write_once(self, channel, addr, data):
+        length = len(data)
+        self.log.info("Conduct DMA single write: channel %d addr %d, length %d, char %c", channel, addr, length, data[0])
+        await self.submit_transfer(channel, addr, length, True)
+        await self.send_data(channel, data)
+    
+    async def run_single_read_once(self, channel, addr, length):
+        self.log.info("Conduct DMA single read: channel %d addr %d, length %d", channel, addr, length)
+        await self.submit_transfer(channel, addr, length, False)
+        data = await self.recv_data(channel)
+        self.log.info("Read data from RootComplex successfully, recv length %d, req length %d", len(data), length)
+        return data
+            

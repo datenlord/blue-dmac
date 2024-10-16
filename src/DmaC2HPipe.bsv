@@ -246,7 +246,7 @@ module mkC2HReadCore#(DmaPathNo pathIdx)(C2HReadCore);
             end 
             else begin
                 stream.isLast = False;
-                $display($time, "ns SIM DEBUG @ mkDmaC2HReadCore%d, expect bytes %drecv bytes %d", pathIdx, reqInflightFifo.first.length, recvBytesCnt);
+                // $display($time, "ns SIM DEBUG @ mkDmaC2HReadCore%d, expect bytes %drecv bytes %d", pathIdx, reqInflightFifo.first.length, recvBytesCnt);
             end
         end
         // recvTlpCntReg <= recvTlpCnt;

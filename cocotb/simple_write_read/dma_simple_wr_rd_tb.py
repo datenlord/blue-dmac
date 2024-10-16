@@ -7,10 +7,22 @@ from cocotb.clock import Clock
 
 import cocotb_test.simulator
 
+import sys
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from bdmatb import BdmaSimpleTb
 
 tests_dir = os.path.dirname(__file__)
 rtl_dir = tests_dir
+
+async def single_path_random_write_test(pcie_tb, dma_channel, mem):
+    for _ in range(100):
+        addr, length = pcie_tb.gen_random_req(dma_channel)
+        addr = mem.get_absolute_address(addr)
+        char = bytes(random.choice('abcdefghijklmnopqrstuvwxyz'), encoding="UTF-8")
+        data = char * length
+        await pcie_tb.run_single_write_once(dma_channel, addr, data)
+        await Timer(200+length, units='ns')
+        assert mem[addr:addr+length] == data
 
 @cocotb.test(timeout_time=10000000, timeout_unit="ns")   
 async def bar_test(dut):
@@ -24,18 +36,12 @@ async def bar_test(dut):
     await dev.set_master()
     
     dev_bar0 = dev.bar_window[0]
-    addr = 0x12345678
-    length = 0xffff
-    isWrite = True
-    addrLo = addr & 0xFFFFFFFF
-    addrHi = (addr >> 32) & 0xFFFFFFFF
-    base_addr = 0
-    await dev_bar0.write(base_addr + 1, addrLo.to_bytes(4, byteorder='big', signed=False))
-    await dev_bar0.write(base_addr + 2, addrHi.to_bytes(4, byteorder='big', signed=False))
-    await dev_bar0.write(base_addr + 3, length.to_bytes(4, byteorder='big', signed=False))
-    await dev_bar0.write(base_addr, int(isWrite).to_bytes(4, byteorder='big', signed=False))
+    tb.conbine_bar(dev_bar0)
+    await tb.memory_map()
     
-    await Timer(500, units='ns')
+    mem = tb.rc.mem_pool.alloc_region(1024*1024)
+    await single_path_random_write_test(tb, 0, mem)
+    
 def test_dma():
     dut = "mkRawSimpleDmaController"
     module = os.path.splitext(os.path.basename(__file__))[0]
