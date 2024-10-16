@@ -131,7 +131,6 @@ module mkC2HReadCore#(DmaPathNo pathIdx)(C2HReadCore);
     Reg#(DmaReqLen) recvBytesReg  <- mkReg(0);
     Vector#(SLOT_PER_PATH, Reg#(DmaReqLen)) chunkBytesRegs <- replicateM(mkReg(0));
 
-    // mkConnection(chunkSplitor.chunkCntFifoOut, expectTlpCntFifo);
     mkConnection(reshapeStrad.streamFifoOut, descRemove.streamFifoIn);
     mkConnection(descRemove.streamFifoOut, dwRemove.streamFifoIn);
 
@@ -197,13 +196,15 @@ module mkC2HReadCore#(DmaPathNo pathIdx)(C2HReadCore);
         let byteInStream = convertByteEn2BytePtr(stream.byteEn);
         let isCompleted = completedFifo.first;
         let tag = tagFifo.first;
-        let chunkBytes = zeroExtend(byteInStream) + chunkBytesRegs[tag];
+        let recvdChunkBytes = chunkBytesRegs[tag];
+        let chunkBytes = zeroExtend(byteInStream) + recvdChunkBytes;
         dwRemove.streamFifoOut.deq;
         if (stream.isLast) begin
             completedFifo.deq;
             tagFifo.deq;
         end
         stream.isLast = isCompleted && stream.isLast;
+        stream.isFirst = stream.isFirst && (recvdChunkBytes == 0);
         cBuffer.append.enq(tuple2(tag, stream));
         if (stream.isLast) begin
             cBuffer.complete.put(tag);
@@ -214,7 +215,7 @@ module mkC2HReadCore#(DmaPathNo pathIdx)(C2HReadCore);
         // $display("tag%d", tag, fshow(stream));
     endrule
 
-    // Pipeline stage 4: there may be a bubble ibetween the first and last DataStream of cBUffer drain output
+    // Pipeline stage 4: there may be a bubble between the first and last DataStream of cBUffer drain output
     //  Reshape the DataStream from RCB chunks to MRRS chunks
     rule reshapeRCB;
         let stream = cBuffer.drain.first;
@@ -227,19 +228,12 @@ module mkC2HReadCore#(DmaPathNo pathIdx)(C2HReadCore);
     //  Reshape the DataStream from MRRS chunks to a whole DataStream 
     rule reshapeMRRS;
         let stream = reshapeRcb.streamFifoOut.first;
+        $display($time, "ns SIM INFO @ reshapeMRRS: get stream from reshapeRcb, isFirst %d, isLast %d, data %h", pack(stream.isFirst), pack(stream.isLast), stream.data);
         let byteInStream = convertByteEn2BytePtr(stream.byteEn);
         let recvBytesCnt = recvBytesReg + zeroExtend(byteInStream);
         reshapeRcb.streamFifoOut.deq;
-        // let recvTlpCnt = recvTlpCntReg;
-        // if (stream.isFirst) begin
-        //     if (recvTlpCnt > 0) begin
-        //         stream.isFirst = False;
-        //     end
-        //     recvTlpCnt = recvTlpCntReg + 1;
-        // end
         if (stream.isLast) begin
             if (reqInflightFifo.first.length == recvBytesCnt) begin
-                // recvTlpCnt = 0;
                 reqInflightFifo.deq;
                 $display($time, "ns SIM INFO @ mkDmaC2HReadCore%d: a read request is done, total recvd bytes: %d", pathIdx, recvBytesCnt);
                 recvBytesCnt = 0;

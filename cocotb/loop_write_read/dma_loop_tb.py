@@ -9,34 +9,29 @@ import cocotb_test.simulator
 
 import sys
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
-from bdmatb import BdmaSimpleTb
+from bdmatb import BdmaLoopTb
 
 tests_dir = os.path.dirname(__file__)
 rtl_dir = tests_dir
 
-async def single_path_random_write_test(pcie_tb, dma_channel, mem):
-    for _ in range(100):
-        addr, length = pcie_tb.gen_random_req(dma_channel)
-        addr = mem.get_absolute_address(addr)
-        char = bytes(random.choice('abcdefghijklmnopqrstuvwxyz'), encoding="UTF-8")
-        data = char * length
-        await pcie_tb.run_single_write_once(dma_channel, addr, data)
-        await Timer(200+length, units='ns')
-        assert mem[addr:addr+length] == data
-        
-async def single_path_random_read_test(pcie_tb, dma_channel, mem):
-    for _ in range(100):
-        addr, length = pcie_tb.gen_random_req(dma_channel)
-        addr = mem.get_absolute_address(addr)
-        char = bytes(random.choice('abcdefghijklmnopqrstuvwxyz'), encoding="UTF-8")
-        mem[addr:addr+length] = char * length
-        data = await pcie_tb.run_single_read_once(dma_channel, addr, length)
-        await Timer(200+length, units='ns')
-        assert data == char * length
+async def loop_write_read_once(pcie_tb, mem):
+    # addr, length = pcie_tb.gen_random_req(0)
+    addr = 1
+    length = 129
+    addr = mem.get_absolute_address(addr)
+    char = bytes(random.choice('abcdefghijklmnopqrstuvwxyz'), encoding="UTF-8")
+    data = char * length
+    mem[addr:addr+length] = data
+    await pcie_tb.run_single_read_once(0, addr, length)
+    await Timer(length, units='ns')
+    new_addr = addr + 8192
+    await pcie_tb.run_single_write_once(0, new_addr, length)
+    await Timer(200+4*length, units='ns')
+    assert mem[new_addr:new_addr+length] == data
 
 @cocotb.test(timeout_time=10000000, timeout_unit="ns")   
 async def bar_test(dut):
-    tb = BdmaSimpleTb(dut)
+    tb = BdmaLoopTb(dut)
     await tb.gen_reset()
     
     await tb.rc.enumerate()
@@ -50,10 +45,10 @@ async def bar_test(dut):
     await tb.memory_map()
     
     mem = tb.rc.mem_pool.alloc_region(1024*1024)
-    await single_path_random_read_test(tb, 0, mem)
+    await loop_write_read_once(tb, mem)
     
 def test_dma():
-    dut = "mkRawSimpleDmaController"
+    dut = "mkRawTestDmaController"
     module = os.path.splitext(os.path.basename(__file__))[0]
     toplevel = dut
 

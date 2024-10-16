@@ -392,7 +392,6 @@ class BdmaSimpleTb(BdmaTb):
         await self.write_register(base_addr + 2*page_offset, paLo)
         await self.write_register(base_addr + 2*page_offset + 1, paHi)
         
-
     async def memory_map(self):
         self.log.info("BdmaTb: Starting memory map...")
         await self.write_pa_table(0, 1, 123456)
@@ -424,3 +423,48 @@ class BdmaSimpleTb(BdmaTb):
         self.log.info("Read data from RootComplex successfully, recv length %d, req length %d", len(data), length)
         return data
             
+            
+class BdmaLoopTb(BdmaTb):
+    def conbine_bar(self, bar):
+        self.ep_bar = bar
+    
+    async def write_register(self, addr:int, x:int):
+        x = x & 0xFFFFFFFF
+        self.log.debug("BdmaTb: write register at %d, value %d" % (addr, x))
+        await self.ep_bar.write(addr * 4, x.to_bytes(4, byteorder='little', signed=False))    
+    
+    async def write_pa_table(self, channel, page_offset, pa):
+        base_addr = 512 + channel * 1024
+        page_offset = page_offset & 0x1FF
+        paLo = pa & 0xFFFFFFFF
+        paHi = (pa >> 32) & 0xFFFFFFFF
+        await self.write_register(base_addr + 2*page_offset, paLo)
+        await self.write_register(base_addr + 2*page_offset + 1, paHi)
+
+    async def memory_map(self):
+        self.log.info("BdmaTb: Starting memory map...")
+        await self.write_pa_table(0, 1, 123456)
+        await self.write_pa_table(1, 2, 1)
+        for i in range(512):
+            await self.write_pa_table(0, i, 4096*i)
+            await self.write_pa_table(1, i, 4096*i)
+        await Timer(4 * 512 * 2 * 2, units='ns')
+        
+    async def submit_transfer(self, channel, addr, length, isWrite=True):
+        addrLo = addr & 0xFFFFFFFF
+        addrHi = (addr >> 32) & 0xFFFFFFFF
+        base_addr = channel * 6
+        await self.write_register(base_addr + 1, addrLo)
+        await self.write_register(base_addr + 2, addrHi)
+        await self.write_register(base_addr + 3, length)
+        await self.write_register(base_addr, int(isWrite))
+        
+    async def run_single_write_once(self, channel, addr, length):
+        self.log.info("Conduct DMA single write: channel %d addr %d, length %d", channel, addr, length)
+        await self.submit_transfer(channel, addr, length, True)
+    
+    async def run_single_read_once(self, channel, addr, length):
+        self.log.info("Conduct DMA single read: channel %d addr %d, length %d", channel, addr, length)
+        await self.submit_transfer(channel, addr, length, False)
+
+    

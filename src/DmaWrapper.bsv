@@ -361,6 +361,11 @@ module mkRawTestDmaController(RawLoopDmaController);
     mkConnection(dmac.h2cReqFifoOut, dummyCsr.reqFifoIn);
     mkConnection(dmac.h2cRespFifoIn, dummyCsr.respFifoOut);
 
+    rule logRead;
+        let stream = dmac.c2hDataFifoOut[0].first;
+        $display($time, "ns SIM INFO @ mkRawTestDmaController: recv stream, isFirst %d, isLast %d, data %h", pack(stream.isFirst), pack(stream.isLast), stream.data);
+    endrule
+
     interface rawPcie = dmac.rawPcie;
 
 endmodule
