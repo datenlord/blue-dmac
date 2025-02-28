@@ -37,7 +37,7 @@ async def stress_random_write_test(pcie_tb, dma_channel, mem, n):
 async def run_stress_write(pcie_tb, mem):
     n = 10
     end = await stress_random_write_test(pcie_tb, 0, mem, n)
-    await Timer(2048 * 2048)
+    await Timer(8192, units="ns")
     for i in range(int(end/4)):
         assert i == int.from_bytes(mem[i*4:(i+1)*4], byteorder='little', signed=False)
             

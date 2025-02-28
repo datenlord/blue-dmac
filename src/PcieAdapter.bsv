@@ -616,8 +616,8 @@ module mkConvertDataStreamsToStraddleAxis(ConvertDataStreamsToStraddleAxis);
             };
         axiStreamOutFifo.enq(axiStream);
         $display($time, "ns SIM INFO @ mkDataStreamToAxis: tx a AXIS frame, isSop:%d, isSopPtr:%d/%d, isEop:%d, isEopPtr:%d/%d, BE0:%b/%b, BE1:%b/%b, tData:%h", 
-        sideBand.isSop.isSop, sideBand.isSop.isSopPtrs[0], sideBand.isSop.isSopPtrs[1], sideBand.isEop.isEop, sideBand.isEop.isEopPtrs[0], sideBand.isEop.isEopPtrs[1], 
-        tpl_1(sideBandBE0), tpl_2(sideBandBE0), tpl_1(sideBandBE1), tpl_2(sideBandBE1), axiStream.tData);
+            sideBand.isSop.isSop, sideBand.isSop.isSopPtrs[0], sideBand.isSop.isSopPtrs[1], sideBand.isEop.isEop, sideBand.isEop.isEopPtrs[0], sideBand.isEop.isEopPtrs[1], 
+            tpl_1(sideBandBE0), tpl_2(sideBandBE0), tpl_1(sideBandBE1), tpl_2(sideBandBE1), axiStream.tData);
     endrule 
 
     Vector#(DMA_PATH_NUM, FifoIn#(DataStream))     dataFifoInIfc   = newVector;

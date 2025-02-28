@@ -246,7 +246,7 @@ module mkC2HReadCore#(DmaPathNo pathIdx)(C2HReadCore);
     StreamPipe     reshapeRcb     <- mkStreamReshape;
     StreamPipe     reshapeMrrs    <- mkStreamReshape;
     ChunkCompute   chunkSplitor   <- mkChunkComputer(DMA_RX);
-    CompletionFifo#(SLOT_PER_PATH, DataStream)  cBuffer <- mkCompletionFifo(valueOf(MAX_STREAM_NUM_PER_COMPLETION));
+    CompletionFifo#(SLOT_PER_PATH, MAX_STREAM_NUM_PER_COMPLETION, DataStream)  cBuffer <- mkCompletionFifo;
     RqDescriptorGenerator rqDescGenerator <- mkRqDescriptorGenerator(False);
     
     Reg#(Bool) hasReadOnceReg   <- mkReg(False);
@@ -329,9 +329,8 @@ module mkC2HReadCore#(DmaPathNo pathIdx)(C2HReadCore);
         end
         stream.isLast = isCompleted && stream.isLast;   //Re-define the stream boundary
         stream.isFirst = stream.isFirst && (!chunkFlagRegs[tag]);
-        cBuffer.append.enq(tuple2(tag, stream));
+        cBuffer.append.enq(tuple3(tag, stream, stream.isLast));
         if (stream.isLast) begin
-            cBuffer.complete.put(tag);
             // $display($time, "ns SIM INFO @ mkDmaC2HReadCore%d: a chunk is completed in cBuffer, tag: %d", pathIdx, tag);
             rcvdFlag = False;
         end

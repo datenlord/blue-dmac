@@ -5,8 +5,16 @@ import BRAMFIFO::*;
 import Vector::*;
 import DReg::*;
 import Connectable::*;
+import BRAM :: *;
+import CpltBufferCf :: *;
 
 import SemiFifo::*;
+
+
+
+typedef struct {
+    Bit#(TLog#(nChunk)) curChunkIdx;
+} CpltFifoMetaEntry#(numeric type nChunk) deriving (Bits, FShow);
 
 // CompletionFifo
 //
@@ -24,97 +32,138 @@ import SemiFifo::*;
 //  nSlot : slot numbers, should be less than 16 in current version
 //  nChunk: chunk numbers per slot, a large value may cause bad timing
 //  tChunk: chunk data types
-interface CompletionFifo#(numeric type nSlot, type tChunk);
+interface CompletionFifo#(numeric type nSlot, numeric type nChunk, type tChunk);
     interface Get#(SlotNum#(nSlot)) reserve;
     method    Bool available;
-    interface FifoIn#(Tuple2#(SlotNum#(nSlot), tChunk)) append;
-    interface Put#(SlotNum#(nSlot)) complete;
+    interface FifoIn#(Tuple3#(SlotNum#(nSlot), tChunk, Bool)) append;
     interface FifoOut#(tChunk) drain;
 endinterface
 
 typedef Bit#(TLog#(nSlot)) SlotNum#(numeric type nSlot);
+typedef Bit#(TAdd#(TLog#(nSlot), TLog#(nChunk))) CpltFifoInternalBufferAddress#(numeric type nSlot, numeric type nChunk);
 
 function Bool isPowerOf2(Integer n);
    return (n == (2 ** (log2(n))));
 endfunction
 
-module mkCompletionFifo#(Integer nChunk)(CompletionFifo#(nSlot, tChunk))
-  provisos (Bits#(tChunk, szChunk), Add#(1, _a, szChunk), Add#(_b, TLog#(nSlot), 4));
+module mkCompletionFifo(CompletionFifo#(nSlot, nChunk, tChunk))
+    provisos (
+        Bits#(tChunk, szChunk), Add#(1, _a, szChunk), Add#(_b, TLog#(nSlot), 4),
+        Alias#(CpltFifoInternalBufferAddress#(nSlot, nChunk), tStorageAddr)
+    );
+
 
     let maxSlotIdx = fromInteger(valueOf(nSlot) - 1);
-    function Action incrSlotIdx(Reg#(Bit#(TLog#(nSlot))) idxReg);
-        action
-            if (isPowerOf2(valueOf(nSlot)))
-                idxReg <= idxReg + 1;  // counter wraps automagically
-            else
-                idxReg <= ((idxReg == maxSlotIdx) ? 0 : idxReg + 1);
-        endaction
-    endfunction
 
-    FIFOF#(Tuple2#(SlotNum#(nSlot), tChunk)) appendFifo <- mkFIFOF;
-    Demux1To16#(tChunk) demuxer <- mkDemux1To16;
+    FIFOF#(Tuple3#(SlotNum#(nSlot), tChunk, Bool)) appendFifo <- mkFIFOF;
     FIFOF#(tChunk) drainFifo <- mkFIFOF;
-    Vector#(nSlot, FIFOF#(tChunk)) bufferFifos <- replicateM(mkSizedBRAMFIFOF(nChunk));
-    Vector#(nSlot, FIFOF#(Maybe#(tChunk))) fanoutFifos <- replicateM(mkFIFOF);
 
-    Reg#(SlotNum#(nSlot)) inIdxReg  <- mkReg(0);       // input index, return this value when `reserve` is called
-    Reg#(SlotNum#(nSlot)) outIdxReg <- mkReg(0);       // output index, pipeout Fifos[outIdxReg] 
+
+    BRAM2Port#(SlotNum#(nSlot), CpltFifoMetaEntry#(nChunk)) metaStorage <- mkBRAM2Server(defaultValue);
+
+    BRAM2Port#(tStorageAddr, tChunk) chunkStorage <- mkBRAM2Server(defaultValue);
+
+    CompletionBuf#(nSlot, CpltFifoMetaEntry#(nChunk)) cpltFlagBuffer <- mkCompletionBuf;
+    
     Counter#(TAdd#(1, TLog#(nSlot))) counter <- mkCounter(0);             // number of filled slots
-    Reg#(Vector#(nSlot, Bool)) flagsReg <- mkReg(replicate(False));
-    Vector#(TAdd#(DEMUX16_LATENCY,1), Reg#(Maybe#(SlotNum#(nSlot)))) cmplSlotRegs <- replicateM(mkDReg(tagged Invalid));
-    RWire#(SlotNum#(nSlot)) rstSlot  <- mkRWire;
 
-    Integer fIdx = 0;
+    // Pipeline FIFOs:
+    FIFOF#(Tuple3#(SlotNum#(nSlot), tChunk, Bool)) handleMeatStorageRespPipelineQueue <- mkSizedFIFOF(4);
+    FIFOF#(CpltFifoMetaEntry#(nChunk)) pendingOutputPipelineQueue <- mkFIFOF;
 
-    rule writeBuffer;
-        let {slot, data} = appendFifo.first;
+    rule forwardDrain;
+        cpltFlagBuffer.deq;
+        pendingOutputPipelineQueue.enq(cpltFlagBuffer.first);
+    endrule
+   
+    rule handleWriteStepOne;
+        let {slot, data, isAllCplt} = appendFifo.first;
         appendFifo.deq;
-        demuxer.fin.enq(data);
-        demuxer.sin.enq(zeroExtend(slot));
+
+        let bramReq = BRAMRequest {
+            write   : False,
+            responseOnWrite : False,
+            address : slot,
+            datain  : ?
+        };
+        metaStorage.portA.request.put(bramReq);
+        handleMeatStorageRespPipelineQueue.enq(tuple3(slot, data, isAllCplt));
     endrule
 
-    for (fIdx = 0; fIdx < valueOf(nSlot); fIdx = fIdx + 1) begin
-        mkConnection(demuxer.fouts[fIdx], bufferFifos[fIdx]);
-    end
+    rule handleMetaStorageResp;
+        let {slot, data, isAllCplt} = handleMeatStorageRespPipelineQueue.first;
+        handleMeatStorageRespPipelineQueue.deq;
 
-    rule readBuffer;
-        if (!bufferFifos[outIdxReg].notEmpty && flagsReg[outIdxReg]) begin  // complete assert and the buffer is empty
-            incrSlotIdx(outIdxReg);
-            rstSlot.wset(outIdxReg);
+        let meta <- metaStorage.portA.response.get;
+
+        
+        tStorageAddr storageAddr = unpack({pack(slot), pack(meta.curChunkIdx)});
+
+        let writeBackMeta = CpltFifoMetaEntry {
+            curChunkIdx: isAllCplt ? 0 : meta.curChunkIdx + 1
+        }; 
+
+        let bramReqForMeta = BRAMRequest {
+            write   : True,
+            responseOnWrite : False,
+            address : slot,
+            datain  : writeBackMeta
+        };
+        metaStorage.portB.request.put(bramReqForMeta);
+
+        let bramReqForChunk = BRAMRequest {
+            write   : True,
+            responseOnWrite : False,
+            address : storageAddr,
+            datain  : data
+        };
+        chunkStorage.portB.request.put(bramReqForChunk);
+
+        if (isAllCplt) begin
+            cpltFlagBuffer.complete(tuple2(slot, meta));
+        end
+
+
+    endrule
+
+    Reg#(CpltFifoMetaEntry#(nChunk)) curOutputSlotMetaReg <- mkReg(CpltFifoMetaEntry{curChunkIdx: 0});
+    Reg#(SlotNum#(nSlot)) curOutputSlotIdxReg <- mkReg(0);
+    rule handleFinalOutput;
+        let meta = pendingOutputPipelineQueue.first;
+        
+        let isFinished = meta.curChunkIdx == curOutputSlotMetaReg.curChunkIdx;
+        let isFirst = curOutputSlotMetaReg.curChunkIdx == 0;
+
+        if (isFinished) begin
+            pendingOutputPipelineQueue.deq;
+            // mark next as First
+            curOutputSlotMetaReg <= CpltFifoMetaEntry { curChunkIdx: 0 };
+            curOutputSlotIdxReg <= curOutputSlotIdxReg + 1;
             counter.down;
         end
-        else begin  
-            let data = bufferFifos[outIdxReg].first;
-            bufferFifos[outIdxReg].deq;
-            drainFifo.enq(data);
-        end
+
+        let zeroBasedChunkCnt = meta.curChunkIdx;
+        tStorageAddr storageAddr = unpack({pack(curOutputSlotIdxReg), pack(curOutputSlotMetaReg.curChunkIdx)});
+        let bramReqForChunk = BRAMRequest {
+            write   : False,
+            responseOnWrite : False,
+            address : storageAddr,
+            datain  : ?
+        };
+        chunkStorage.portA.request.put(bramReqForChunk);
     endrule
 
-    rule setFlags;
-        let cmplMaybe = cmplSlotRegs[valueOf(DEMUX16_LATENCY)];
-        let rstMaybe  = rstSlot.wget;
-        let flags = flagsReg;
-        if (isValid(cmplMaybe)) begin
-            flags[fromMaybe(?, cmplMaybe)] = True;
-        end
-        if (isValid(rstMaybe)) begin
-            flags[fromMaybe(?, rstMaybe)] = False;
-        end
-        flagsReg <= flags;
+    rule forwardFinalOutput;
+        let chunk <- chunkStorage.portA.response.get;
+        drainFifo.enq(chunk);
     endrule
 
-    rule cmpl;
-        for (Integer rIdx = 0; rIdx < valueOf(DEMUX16_LATENCY); rIdx = rIdx + 1) begin
-            if (isValid(cmplSlotRegs[rIdx]))
-                cmplSlotRegs[rIdx+1] <= cmplSlotRegs[rIdx];
-        end
-    endrule
 
     interface Get reserve;
-        method ActionValue#(SlotNum#(nSlot)) get() if (counter.value <= maxSlotIdx);
-            incrSlotIdx(inIdxReg);
+        method ActionValue#(SlotNum#(nSlot)) get();
+            let slotId <- cpltFlagBuffer.reserve;
             counter.up;
-            return inIdxReg;
+            return slotId;
         endmethod
     endinterface
 
@@ -122,73 +171,8 @@ module mkCompletionFifo#(Integer nChunk)(CompletionFifo#(nSlot, tChunk))
         return (counter.value <= maxSlotIdx);
     endmethod
 
-    interface Put complete;
-        method Action put(SlotNum#(nSlot) slot);
-            cmplSlotRegs[0] <= tagged Valid slot;
-        endmethod
-    endinterface
 
     interface append = convertFifoToFifoIn(appendFifo);
     interface drain  = convertFifoToFifoOut(drainFifo);
 
-endmodule
-
-function Action demux1To4(FIFOF#(tData) inFifo, Vector#(4, FIFOF#(tData)) outFifos, Bit#(2) s)
-    provisos (Bits#(tData, szData));
-    action
-        let data = inFifo.first;
-        inFifo.deq;
-        case(s)
-            0: outFifos[0].enq(data);
-            1: outFifos[1].enq(data);
-            2: outFifos[2].enq(data);
-            3: outFifos[3].enq(data);
-            default: begin end
-        endcase
-    endaction
-endfunction
-
-typedef 3 DEMUX16_LATENCY;
-
-interface Demux1To16#(type tData);
-    interface FifoIn#(tData) fin;
-    interface Vector#(16, FifoOut#(tData)) fouts;
-    interface FifoIn#(Bit#(4)) sin;
-endinterface
-
-module mkDemux1To16(Demux1To16#(tData)) provisos(Bits#(tData, szData));
-    FIFOF#(tData) inFifo <- mkFIFOF;
-    Vector#(4, FIFOF#(tData)) midFifos <- replicateM(mkFIFOF);
-    Vector#(4, Vector#(4, FIFOF#(tData))) outFifos <- replicateM(replicateM(mkFIFOF));
-    Vector#(2, FIFOF#(Bit#(4))) sFifo <- replicateM(mkFIFOF);
-
-    Vector#(16, FifoOut#(tData)) outIfc = newVector;
-
-    rule l1Demux;
-        let l1Set = truncate(sFifo[0].first >> 2);
-        demux1To4(inFifo, midFifos, l1Set);
-        sFifo[0].deq;
-        sFifo[1].enq(sFifo[0].first);
-    endrule
-
-    for(Integer idx = 0; idx < 4; idx = idx + 1) begin
-        rule l2Demux;
-            let l2set = truncate(sFifo[1].first);
-            demux1To4(midFifos[idx], outFifos[idx], l2set);
-        endrule
-    end
-
-    rule sDeq;
-        sFifo[1].deq;
-    endrule
-
-    for (Integer idx = 0; idx < 4; idx = idx + 1) begin
-        for (Integer subIdx = 0; subIdx < 4; subIdx = subIdx + 1) begin
-            outIfc[idx*4 + subIdx] = convertFifoToFifoOut(outFifos[idx][subIdx]);
-        end
-    end
-
-    interface fin = convertFifoToFifoIn(inFifo);
-    interface sin = convertFifoToFifoIn(sFifo[0]);
-    interface fouts = outIfc;
 endmodule
