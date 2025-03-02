@@ -7,6 +7,7 @@ import DReg::*;
 import Connectable::*;
 import BRAM :: *;
 import CpltBufferCf :: *;
+import PrioritySearchBuffer :: *;
 
 import SemiFifo::*;
 
@@ -49,7 +50,8 @@ endfunction
 module mkCompletionFifo(CompletionFifo#(nSlot, nChunk, tChunk))
     provisos (
         Bits#(tChunk, szChunk), Add#(1, _a, szChunk), Add#(_b, TLog#(nSlot), 4),
-        Alias#(CpltFifoInternalBufferAddress#(nSlot, nChunk), tStorageAddr)
+        Alias#(CpltFifoInternalBufferAddress#(nSlot, nChunk), tStorageAddr),
+        FShow#(tChunk)
     );
 
 
@@ -66,17 +68,40 @@ module mkCompletionFifo(CompletionFifo#(nSlot, nChunk, tChunk))
     CompletionBuf#(nSlot, CpltFifoMetaEntry#(nChunk)) cpltFlagBuffer <- mkCompletionBuf;
     
     Counter#(TAdd#(1, TLog#(nSlot))) counter <- mkCounter(0);             // number of filled slots
+    PrioritySearchBuffer#(6, SlotNum#(nSlot), CpltFifoMetaEntry#(nChunk)) storageForwardBuffer <- mkPrioritySearchBuffer(6);
 
     // Pipeline FIFOs:
     FIFOF#(Tuple3#(SlotNum#(nSlot), tChunk, Bool)) handleMeatStorageRespPipelineQueue <- mkSizedFIFOF(4);
     FIFOF#(CpltFifoMetaEntry#(nChunk)) pendingOutputPipelineQueue <- mkFIFOF;
+
+    Reg#(Bool) bramInitedReg <- mkReg(False);
+    Reg#(SlotNum#(nSlot)) bramInitIdxReg <- mkReg(0);
+
+    rule initBram if (!bramInitedReg);
+        let initMeta = CpltFifoMetaEntry {
+            curChunkIdx: 0
+        }; 
+
+        let bramReqForMeta = BRAMRequest {
+            write   : True,
+            responseOnWrite : False,
+            address : bramInitIdxReg,
+            datain  : initMeta
+        };
+        metaStorage.portB.request.put(bramReqForMeta);
+        bramInitIdxReg <= bramInitIdxReg + 1;
+
+        if (bramInitIdxReg == maxBound) begin
+            bramInitedReg <= True;
+        end
+    endrule
 
     rule forwardDrain;
         cpltFlagBuffer.deq;
         pendingOutputPipelineQueue.enq(cpltFlagBuffer.first);
     endrule
    
-    rule handleWriteStepOne;
+    rule handleWriteStepOne if (bramInitedReg);
         let {slot, data, isAllCplt} = appendFifo.first;
         appendFifo.deq;
 
@@ -88,13 +113,25 @@ module mkCompletionFifo(CompletionFifo#(nSlot, nChunk, tChunk))
         };
         metaStorage.portA.request.put(bramReq);
         handleMeatStorageRespPipelineQueue.enq(tuple3(slot, data, isAllCplt));
+
+        $display(
+            "time=%0t", $time, "mkCompletionFifo handleWriteStepOne",
+            ", slot=", fshow(slot),
+            ", isAllCplt=", fshow(isAllCplt),
+            ", data=", fshow(data)
+        );
+        
     endrule
 
-    rule handleMetaStorageResp;
+    rule handleMetaStorageResp  if (bramInitedReg);
         let {slot, data, isAllCplt} = handleMeatStorageRespPipelineQueue.first;
         handleMeatStorageRespPipelineQueue.deq;
 
         let meta <- metaStorage.portA.response.get;
+        let metaFromForwardMaybe <- storageForwardBuffer.search(slot);
+        if (metaFromForwardMaybe matches tagged Valid .forwardMeta) begin
+            meta = forwardMeta;
+        end
 
         
         tStorageAddr storageAddr = unpack({pack(slot), pack(meta.curChunkIdx)});
@@ -110,6 +147,7 @@ module mkCompletionFifo(CompletionFifo#(nSlot, nChunk, tChunk))
             datain  : writeBackMeta
         };
         metaStorage.portB.request.put(bramReqForMeta);
+        storageForwardBuffer.enq(slot, writeBackMeta);
 
         let bramReqForChunk = BRAMRequest {
             write   : True,
@@ -118,11 +156,18 @@ module mkCompletionFifo(CompletionFifo#(nSlot, nChunk, tChunk))
             datain  : data
         };
         chunkStorage.portB.request.put(bramReqForChunk);
+        
 
         if (isAllCplt) begin
             cpltFlagBuffer.complete(tuple2(slot, meta));
         end
 
+        $display(
+            "time=%0t", $time, "mkCompletionFifo handleMetaStorageResp",
+            ", slot=", fshow(slot),
+            ", isAllCplt=", fshow(isAllCplt),
+            ", data=", fshow(data)
+        );
 
     endrule
 
@@ -134,10 +179,11 @@ module mkCompletionFifo(CompletionFifo#(nSlot, nChunk, tChunk))
         let isFinished = meta.curChunkIdx == curOutputSlotMetaReg.curChunkIdx;
         let isFirst = curOutputSlotMetaReg.curChunkIdx == 0;
 
+        let nextBeatMeat = CpltFifoMetaEntry { curChunkIdx: curOutputSlotMetaReg.curChunkIdx + 1 };
         if (isFinished) begin
             pendingOutputPipelineQueue.deq;
             // mark next as First
-            curOutputSlotMetaReg <= CpltFifoMetaEntry { curChunkIdx: 0 };
+            nextBeatMeat = CpltFifoMetaEntry { curChunkIdx: 0 };
             curOutputSlotIdxReg <= curOutputSlotIdxReg + 1;
             counter.down;
         end
@@ -151,11 +197,22 @@ module mkCompletionFifo(CompletionFifo#(nSlot, nChunk, tChunk))
             datain  : ?
         };
         chunkStorage.portA.request.put(bramReqForChunk);
+        curOutputSlotMetaReg <= nextBeatMeat;
+
+        $display(
+            "time=%0t", $time, "mkCompletionFifo handleFinalOutput",
+            ", meta=", fshow(meta),
+            ", curOutputSlotMetaReg=", fshow(curOutputSlotMetaReg)
+        );
     endrule
 
     rule forwardFinalOutput;
         let chunk <- chunkStorage.portA.response.get;
         drainFifo.enq(chunk);
+        $display(
+            "time=%0t", $time, "mkCompletionFifo forwardFinalOutput",
+            ", chunk=", fshow(chunk)
+        );
     endrule
 
 
@@ -163,6 +220,11 @@ module mkCompletionFifo(CompletionFifo#(nSlot, nChunk, tChunk))
         method ActionValue#(SlotNum#(nSlot)) get();
             let slotId <- cpltFlagBuffer.reserve;
             counter.up;
+            $display(
+                "time=%0t", $time, "mkCompletionFifo reserve",
+                ", slotId=", fshow(slotId)
+            );
+
             return slotId;
         endmethod
     endinterface

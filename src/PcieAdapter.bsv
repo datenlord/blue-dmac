@@ -188,7 +188,7 @@ typedef struct {
     DataStream stream;
     DmaPathNo id;
     DmaPathNo subId;
-} ArbitHandle deriving(Bits, Eq, Bounded);
+} ArbitHandle deriving(Bits, Eq, Bounded, FShow);
 
 function ArbitHandle getEmptyArbitHandle();
     return ArbitHandle {

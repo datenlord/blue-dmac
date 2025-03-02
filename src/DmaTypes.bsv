@@ -74,18 +74,18 @@ typedef struct {
     DmaMemAddr endAddr;
     DmaReqLen  length;
     Tag        tag;
-} DmaExtendRequest deriving(Bits, Bounded, Eq);
+} DmaExtendRequest deriving(Bits, Bounded, Eq, FShow);
 
 typedef struct {
     DmaCsrAddr  addr;
     DmaCsrValue value;
     Bool        isWrite;
-} CsrRequest deriving(Bits, Bounded, Eq);
+} CsrRequest deriving(Bits, Bounded, Eq, FShow);
 
 typedef struct {
     DmaCsrAddr  addr;
     DmaCsrValue value;
-} CsrResponse deriving(Bits, Bounded, Eq);
+} CsrResponse deriving(Bits, Bounded, Eq, FShow);
 
 typedef enum {
     DMA_RX, 

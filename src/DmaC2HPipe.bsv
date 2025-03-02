@@ -185,6 +185,7 @@ module mkDmaC2HPipe#(DmaPathNo pathIdx)(DmaC2HPipe);
                 tlpOutFifo.enq(readCore.tlpFifoOut.first);
                 tlpSideBandFifo.enq(readCore.tlpSideBandFifoOut.first);
                 readCore.tlpSideBandFifoOut.deq;
+                readCore.tlpFifoOut.deq;
             end
             else begin
                 tlpOutFifo.enq(writeCore.tlpFifoOut.first);

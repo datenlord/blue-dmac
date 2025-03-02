@@ -71,25 +71,25 @@ typedef Bit#(PCIE_TLP_RC_ISEOP_WIDTH)       PcieTlpCtlIsEopRC;
 typedef struct {
     Vector#(PCIE_TLP_ISSOP_WIDTH, PcieTlpCtlIsSopPtr) isSopPtrs;
     PcieTlpCtlIsSop                 isSop;
-} PcieTlpCtlIsSopCommon deriving(Bits, Bounded, Eq);
+} PcieTlpCtlIsSopCommon deriving(Bits, Bounded, Eq, FShow);
 
 // Signals the start of a new TLP, 12 bit.
 typedef struct {
     Vector#(PCIE_TLP_RC_ISSOP_WIDTH, PcieTlpCtlIsSopPtr) isSopPtrs;
     PcieTlpCtlIsSopRC               isSop;
-} PcieTlpCtlIsSopReqCpl deriving(Bits, Bounded, Eq);
+} PcieTlpCtlIsSopReqCpl deriving(Bits, Bounded, Eq, FShow);
 
 // Indicates a TLP is ending in this beat, 10bit.
 typedef struct {
     Vector#(PCIE_TLP_ISEOP_WIDTH, PcieTlpCtlIsEopPtr) isEopPtrs;
     PcieTlpCtlIsEop                 isEop;
-} PcieTlpCtlIsEopCommon deriving(Bits, Bounded, Eq);
+} PcieTlpCtlIsEopCommon deriving(Bits, Bounded, Eq, FShow);
 
 // Indicates a TLP is ending in this beat, 20bit.
 typedef struct {
     Vector#(PCIE_TLP_RC_ISEOP_WIDTH, PcieTlpCtlIsEopPtr) isEopPtrs;
     PcieTlpCtlIsEopRC               isEop;
-} PcieTlpCtlIsEopReqCpl deriving(Bits, Bounded, Eq);
+} PcieTlpCtlIsEopReqCpl deriving(Bits, Bounded, Eq, FShow);
 
 // Only support at most 2 TLP straddle mode on RQ&RC
 typedef 2'b00 NO_TLP_IN_THIS_BEAT;
@@ -111,7 +111,7 @@ typedef struct {
     PcieTlpCtlByteEn                dataByteEn;  
     PcieTlpCtlLastByteEn            lastByteEn;
     PcieTlpCtlFirstByteEn           firstByteEn;
-} PcieCompleterRequestSideBandFrame deriving(Bits, Bounded, Eq);
+} PcieCompleterRequestSideBandFrame deriving(Bits, Bounded, Eq, FShow);
 
 // 81bit tUser of PcieCompleterComplete AXIS-master
 typedef struct { 
@@ -119,7 +119,7 @@ typedef struct {
     Bool                            discontinue;
     PcieTlpCtlIsEopCommon           isEop;
     PcieTlpCtlIsSopCommon           isSop;
-} PcieCompleterCompleteSideBandFrame deriving(Bits, Bounded, Eq);
+} PcieCompleterCompleteSideBandFrame deriving(Bits, Bounded, Eq, FShow);
 
 // 137bit tUser of PcieRequesterRequeste AXIS-master
 typedef struct {
@@ -136,7 +136,7 @@ typedef struct {
     PcieTlpCtlAddrOffset            addrOffset;
     PcieTlpCtlLastByteEn            lastByteEn;
     PcieTlpCtlFirstByteEn           firstByteEn;
-} PcieRequesterRequestSideBandFrame deriving(Bits, Bounded, Eq);
+} PcieRequesterRequestSideBandFrame deriving(Bits, Bounded, Eq, FShow);
 
 // 161bit tUser of PcieRequesterComplete AXIS-slave
 typedef struct {
@@ -145,7 +145,7 @@ Bool                            discontinue;
 PcieTlpCtlIsEopReqCpl           isEop;
 PcieTlpCtlIsSopReqCpl           isSop;
 PcieTlpCtlByteEn                dataByteEn;  
-} PcieRequesterCompleteSideBandFrame deriving(Bits, Bounded, Eq);
+} PcieRequesterCompleteSideBandFrame deriving(Bits, Bounded, Eq, FShow);
 
 
 // PCIe raw interfaces
