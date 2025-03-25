@@ -8,9 +8,9 @@ OUTPUTDIR ?= output
 LOGFILE ?= run_vivado.log
 RUNTOPHASE ?= synth # synth place route all
 # vu13p, u200
-TARGETPLATFORM ?= u200
+TARGETPLATFORM ?= vu13p
 # xcvu13p-fhgb2104-2-i, xcu200-fsgd2104-2-e
-PARTNAME = xcu200-fsgd2104-2-e
+PARTNAME = xcvu13p-fhgb2104-2-i
 TARGETFILE ?= ../src/DmaWrapper.bsv
 #MODULE List: mkRawSimpleDmaController mkRawBypassDmaController mkRawTestDmaController
 TOPMODULE ?= mkRawTestDmaController
@@ -56,5 +56,5 @@ vivado_prw:
 clean:
 	rm -rf $(BUILDDIR) $(OUTPUTDIR) $(VLOGDIR) .Xil *.jou *.log
 
-.PHONY: verilog vivado clean
+.PHONY: verilog vivado
 .DEFAULT_GOAL := verilog

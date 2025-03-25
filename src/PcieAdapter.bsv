@@ -913,11 +913,29 @@ module mkConvertStraddleAxisToDataStream(ConvertStraddleAxisToDataStream);
     
     function Bool isMyValidTlp(DmaPathNo path, PcieRequesterCompleteDescriptor desc);
         Bool valid = (desc.status == fromInteger(valueOf(SUCCESSFUL_CMPL))) && (!desc.isPoisoned);
-        Bool pathMatch = (truncate(path) == desc.tag[valueOf(DES_NONEXTENDED_TAG_WIDTH) - 1]);
+        Bool pathMatch = (truncate(path) == desc.tag[valueOf(DES_TAG_WIDTH) - 1]);
         return valid && pathMatch;
     endfunction
     
-    rule parseAxiStream;
+    Reg#(Bool) recvDelayReg <- mkReg(False);
+    Reg#(Bit#(32)) recvDelayCounterReg <- mkReg(0);
+    rule flip;
+        recvDelayCounterReg <= recvDelayCounterReg + 1;
+        if (recvDelayCounterReg > 3000) begin
+            recvDelayReg <= True;
+        end
+    endrule
+
+    // rule debug;
+    //     if (!outFifos[0].notFull) begin
+    //         $display("time=%0t, outFifos[0] FULL");
+    //     end
+    //     if (!outFifos[1].notFull) begin
+    //         $display("time=%0t, outFifos[1] FULL");
+    //     end
+    // endrule
+
+    rule parseAxiStream if (recvDelayReg);
         let axiStream = axiStreamInFifo.first;
         axiStreamInFifo.deq;
         PcieRequesterCompleteSideBandFrame sideBand = unpack(axiStream.tUser);

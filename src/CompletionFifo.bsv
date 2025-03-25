@@ -49,7 +49,8 @@ endfunction
 
 module mkCompletionFifo(CompletionFifo#(nSlot, nChunk, tChunk))
     provisos (
-        Bits#(tChunk, szChunk), Add#(1, _a, szChunk), Add#(_b, TLog#(nSlot), 4),
+        Bits#(tChunk, szChunk), 
+        Add#(1, _a, szChunk), 
         Alias#(CpltFifoInternalBufferAddress#(nSlot, nChunk), tStorageAddr),
         FShow#(tChunk)
     );
@@ -114,12 +115,12 @@ module mkCompletionFifo(CompletionFifo#(nSlot, nChunk, tChunk))
         metaStorage.portA.request.put(bramReq);
         handleMeatStorageRespPipelineQueue.enq(tuple3(slot, data, isAllCplt));
 
-        $display(
-            "time=%0t", $time, "mkCompletionFifo handleWriteStepOne",
-            ", slot=", fshow(slot),
-            ", isAllCplt=", fshow(isAllCplt),
-            ", data=", fshow(data)
-        );
+        // $display(
+        //     "time=%0t", $time, "mkCompletionFifo handleWriteStepOne",
+        //     ", slot=", fshow(slot),
+        //     ", isAllCplt=", fshow(isAllCplt),
+        //     ", data=", fshow(data)
+        // );
         
     endrule
 
@@ -162,12 +163,12 @@ module mkCompletionFifo(CompletionFifo#(nSlot, nChunk, tChunk))
             cpltFlagBuffer.complete(tuple2(slot, meta));
         end
 
-        $display(
-            "time=%0t", $time, "mkCompletionFifo handleMetaStorageResp",
-            ", slot=", fshow(slot),
-            ", isAllCplt=", fshow(isAllCplt),
-            ", data=", fshow(data)
-        );
+        // $display(
+        //     "time=%0t", $time, "mkCompletionFifo handleMetaStorageResp",
+        //     ", slot=", fshow(slot),
+        //     ", isAllCplt=", fshow(isAllCplt),
+        //     ", data=", fshow(data)
+        // );
 
     endrule
 
@@ -209,10 +210,10 @@ module mkCompletionFifo(CompletionFifo#(nSlot, nChunk, tChunk))
     rule forwardFinalOutput;
         let chunk <- chunkStorage.portA.response.get;
         drainFifo.enq(chunk);
-        $display(
-            "time=%0t", $time, "mkCompletionFifo forwardFinalOutput",
-            ", chunk=", fshow(chunk)
-        );
+        // $display(
+        //     "time=%0t", $time, "mkCompletionFifo forwardFinalOutput",
+        //     ", chunk=", fshow(chunk)
+        // );
     endrule
 
 

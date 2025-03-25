@@ -14,13 +14,13 @@ set max_net_path_num $::env(MAX_NET_PATH_NUM)
 set current_time [clock format [clock seconds] -format "%Y-%m-%d-%H-%M-%S"]
 
 set_param general.maxthreads 16
-#set device [get_parts $part]; # xcvu13p-fhgb2104-2-i; #xcu200-fsgd2104-2-e
-#set_part $device
+set device [get_parts $part]; # xcvu13p-fhgb2104-2-i; #xcu200-fsgd2104-2-e
+set_part $device
 
-create_project -in_memory
+# create_project -in_memory
 set device [get_parts $part]
-#set_part $device
-set_property board_part xilinx.com:au200:1.3 [current_project]
+set_part $device
+# set_property board_part xilinx.com:au200:1.3 [current_project]
 
 set ooc_module_names { \
     mkRawTestDmaController \
@@ -30,6 +30,7 @@ proc runGenerateIP {args} {
     global dir_output part device dir_ips dir_xdc device dir_ip_gen
 
     file mkdir $dir_output
+    file mkdir $dir_ip_gen
 
     # read_xdc [ glob $dir_xdc/*.xdc ]
 
@@ -81,6 +82,9 @@ proc runSynthDesign {args} {
     global dir_output top_module max_net_path_num
 
     synth_design -top $top_module -flatten_hierarchy none
+
+    source batch_insert_ila.tcl
+    batch_insert_ila 256
 
     write_checkpoint -force $dir_output/post_synth_design.dcp
     write_xdc -force -exclude_physical $dir_output/post_synth.xdc

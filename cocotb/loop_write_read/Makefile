@@ -16,10 +16,10 @@ TB_FILE = $(TB_CASE)_tb.py
 DATE = $(shell date "+%Y%m%d")
 LOG_FILE = $(TB_DIR)/log/$(DATE)_$(TOP_MODULE).log
 
-cocotb:clean verilog prepare run
+cocotb:verilog prepare run
 
 verilog:
-	cd $(BACKEND_DIR) && make clean && make verilog TOPMODULE=$(TOP_MODULE)
+	cd $(BACKEND_DIR) && make verilog TOPMODULE=$(TOP_MODULE)
 
 prepare:
 	rm -rf $(VLOG_FILE)

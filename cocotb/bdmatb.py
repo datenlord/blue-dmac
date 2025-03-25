@@ -10,35 +10,42 @@ from cocotb.clock import Clock
 from cocotbext.pcie.core import RootComplex
 from cocotbext.pcie.xilinx.us import UltraScalePlusPcieDevice
 from cocotbext.axi.stream import define_stream
-from cocotbext.axi import (AxiStreamBus, AxiStreamSource, AxiStreamSink, AxiStreamMonitor, AxiStreamFrame)
+from cocotbext.axi import (
+    AxiStreamBus, AxiStreamSource, AxiStreamSink, AxiStreamMonitor, AxiStreamFrame)
 
 #  class TB architecture
-#  --------------        -------------         ----------- 
-# | Root Complex | <->  | End Pointer |  <->  | Dut(DMAC) |         
+#  --------------        -------------         -----------
+# | Root Complex | <->  | End Pointer |  <->  | Dut(DMAC) |
 #  --------------        -------------         -----------
 
 DescBus, DescTransaction, DescSource, DescSink, DescMonitor = define_stream("Desc",
-    signals=["start_addr", "byte_cnt", "is_write", "valid", "ready"]
-)
+                                                                            signals=[
+                                                                                "start_addr", "byte_cnt", "is_write", "valid", "ready"]
+                                                                            )
+
 
 class BdmaTb(object):
     def __init__(self, dut, msix=False):
         self._pcie_init(dut, msix)
-            
+
     def _pcie_init(self, dut, msix=False):
         self.dut = dut
 
         self.log = logging.getLogger("cocotb.tb")
         self.log.setLevel(logging.DEBUG)
-        
+
         self.clock = dut.CLK
         self.resetn = dut.RST_N
-        
+
         self._bus_width = 512
         self._bus_bytes = 64
-        
+
         # PCIe
         self.rc = RootComplex()
+        self.rc.max_payload_size = 3
+        self.rc.max_read_request_size = 3
+
+        self.rc.log.setLevel(logging.INFO)
 
         cq_straddle = False
         cc_straddle = False
@@ -60,9 +67,9 @@ class BdmaTb(object):
             rc_straddle=rc_straddle,
             rc_4tlp_straddle=rc_4tlp_straddle,
             pf_count=1,
-            max_payload_size=1024,
+            max_payload_size=512,
             enable_client_tag=self.client_tag,
-            enable_extended_tag=False,
+            enable_extended_tag=True,
             enable_parity=False,
             enable_rx_msg_interface=False,
             enable_sriov=False,
@@ -107,7 +114,7 @@ class BdmaTb(object):
             user_lnk_up=dut.user_lnk_up,
             # sys_clk=dut.sys_clk,
             # sys_clk_gt=dut.sys_clk_gt,
-            # sys_reset=dut.sys_reset,
+            sys_reset=dut.sys_reset,
             # phy_rdy_out=dut.phy_rdy_out,
 
             rq_bus=AxiStreamBus.from_prefix(dut, "m_axis_rq"),
@@ -250,7 +257,7 @@ class BdmaTb(object):
         dut.cfg_interrupt_msi_int.setimmediatevalue(0)
         dut.cfg_interrupt_msi_pending_status.setimmediatevalue(0)
         dut.cfg_interrupt_msi_pending_status_data_enable.setimmediatevalue(0)
-        dut.cfg_interrupt_msi_pending_status_function_num.setimmediatevalue(0)       
+        dut.cfg_interrupt_msi_pending_status_function_num.setimmediatevalue(0)
         dut.cfg_interrupt_msi_attr.setimmediatevalue(0)
         dut.cfg_interrupt_msi_tph_present.setimmediatevalue(0)
         dut.cfg_interrupt_msi_tph_type.setimmediatevalue(0)
@@ -266,11 +273,13 @@ class BdmaTb(object):
         dut.cfg_ds_device_number.setimmediatevalue(0)
 
         self.dev.functions[0].configure_bar(0, 16*1024*1024)
-        self.dev.functions[0].configure_bar(1, 16*1024, io=True)
-        
+        self.dev.functions[0].configure_bar(1, 16*1024)
+
         self.rc.make_port().connect(self.dev)
-    
+
     async def gen_reset(self):
+        await RisingEdge(self.clock)
+
         self.resetn.value = 0
         await RisingEdge(self.clock)
         await RisingEdge(self.clock)
@@ -280,40 +289,48 @@ class BdmaTb(object):
         await RisingEdge(self.clock)
         await RisingEdge(self.clock)
         self.log.info("Generated DMA RST_N")
-        
+
     def gen_random_req(self, channel):
         low_boundry = channel * 8192
         high_boundry = (channel + 1) * 8192
         idxs = random.sample(range(low_boundry, high_boundry), 2)
-        lo_idx, hi_idx = idxs[0], idxs[1] 
+        lo_idx, hi_idx = idxs[0], idxs[1]
         if (hi_idx < lo_idx):
             temp = hi_idx
             hi_idx = lo_idx
             lo_idx = temp
         length = hi_idx - lo_idx + 1
-        return (lo_idx, length)   
-    
+        return (lo_idx, length)
+
     def gen_random_len(self):
         return random.randint(1, 8192)
-    
+
     def gen_random_aligned_len(self):
         return random.randint(1, 2048) * 4
-    
+
+
 class BdmaBypassTb(BdmaTb):
     def __init__(self, dut, msix=False):
         super().__init__(dut, msix)
-        
-        # DMA 
-        self.c2h_write_source_0 = AxiStreamSource(AxiStreamBus.from_prefix(dut, "s_axis_c2h_0"), self.clock, self.resetn, False)
-        self.c2h_desc_source_0 = DescSource(DescBus.from_prefix(dut, "s_desc_c2h_0"),self.clock, self.resetn, False)
-        self.c2h_read_sink_0 = AxiStreamSink(AxiStreamBus.from_prefix(dut, "m_axis_c2h_0"), self.clock, self.resetn, False)
-        self.c2h_write_source_1 = AxiStreamSource(AxiStreamBus.from_prefix(dut, "s_axis_c2h_1"), self.clock, self.resetn, False)
-        self.c2h_desc_source_1 = DescSource(DescBus.from_prefix(dut, "s_desc_c2h_1"), self.clock, self.resetn, False)
-        self.c2h_read_sink_1 = AxiStreamSink(AxiStreamBus.from_prefix(dut, "m_axis_c2h_1"), self.clock, self.resetn, False)
-        
-        #monitor
-        self.rq_monitor = AxiStreamMonitor(AxiStreamBus.from_prefix(dut, "m_axis_rq"), self.clock, self.resetn, False)
-            
+
+        # DMA
+        self.c2h_write_source_0 = AxiStreamSource(AxiStreamBus.from_prefix(
+            dut, "s_axis_c2h_0"), self.clock, self.resetn, False)
+        self.c2h_desc_source_0 = DescSource(DescBus.from_prefix(
+            dut, "s_desc_c2h_0"), self.clock, self.resetn, False)
+        self.c2h_read_sink_0 = AxiStreamSink(AxiStreamBus.from_prefix(
+            dut, "m_axis_c2h_0"), self.clock, self.resetn, False)
+        self.c2h_write_source_1 = AxiStreamSource(AxiStreamBus.from_prefix(
+            dut, "s_axis_c2h_1"), self.clock, self.resetn, False)
+        self.c2h_desc_source_1 = DescSource(DescBus.from_prefix(
+            dut, "s_desc_c2h_1"), self.clock, self.resetn, False)
+        self.c2h_read_sink_1 = AxiStreamSink(AxiStreamBus.from_prefix(
+            dut, "m_axis_c2h_1"), self.clock, self.resetn, False)
+
+        # monitor
+        self.rq_monitor = AxiStreamMonitor(AxiStreamBus.from_prefix(
+            dut, "m_axis_rq"), self.clock, self.resetn, False)
+
     async def send_desc(self, channel, startAddr, length, isWrite):
         desc = DescTransaction()
         desc.start_addr = startAddr
@@ -323,67 +340,79 @@ class BdmaBypassTb(BdmaTb):
             await self.c2h_desc_source_0.send(desc)
         else:
             await self.c2h_desc_source_1.send(desc)
-    
+
     async def send_data(self, channel, data):
         if channel == 0:
             await self.c2h_write_source_0.send(data)
         else:
             await self.c2h_write_source_1.send(data)
-            
+
     async def recv_data(self, channel):
-        if channel == 0 :
+        if channel == 0:
             data = await self.c2h_read_sink_0.read()
         else:
             data = await self.c2h_read_sink_1.read()
         data = bytes(''.join([chr(item) for item in data]), encoding='UTF-8')
         return data
-        
+
     async def run_single_write_once(self, channel, addr, data):
         length = len(data)
-        self.log.info("Conduct DMA single write: channel %d addr %d, length %d, char %c", channel, addr, length, data[0])
+        self.log.info("Conduct DMA single write: channel %d addr %d, length %d, char %c",
+                      channel, addr, length, data[0])
         await self.send_desc(channel, addr, length, True)
         await self.send_data(channel, data)
-    
+
     async def run_single_read_once(self, channel, addr, length):
-        self.log.info("Conduct DMA single read: channel %d addr %d, length %d", channel, addr, length)
+        self.log.info(
+            "Conduct DMA single read: channel %d addr %d, length %d", channel, addr, length)
         await self.send_desc(channel, addr, length, False)
         data = await self.recv_data(channel)
-        self.log.info("Read data from RootComplex successfully, recv length %d, req length %d", len(data), length)
+        self.log.info(
+            "Read data from RootComplex successfully, recv length %d, req length %d", len(data), length)
         return data
-            
-            
+
+    async def run_single_only_send_read_desc(self, channel, addr, length):
+        self.log.info(
+            "Conduct DMA single read: channel %d addr %d, length %d", channel, addr, length)
+        await self.send_desc(channel, addr, length, False)
+
+
 class BdmaSimpleTb(BdmaTb):
     def __init__(self, dut, msix=False):
         super().__init__(dut, msix)
-        
-        # DMA 
-        self.c2h_write_source_0 = AxiStreamSource(AxiStreamBus.from_prefix(dut, "s_axis_c2h_0"), self.clock, self.resetn, False)
-        self.c2h_read_sink_0 = AxiStreamSink(AxiStreamBus.from_prefix(dut, "m_axis_c2h_0"), self.clock, self.resetn, False)
-        self.c2h_write_source_1 = AxiStreamSource(AxiStreamBus.from_prefix(dut, "s_axis_c2h_1"), self.clock, self.resetn, False)
-        self.c2h_read_sink_1 = AxiStreamSink(AxiStreamBus.from_prefix(dut, "m_axis_c2h_1"), self.clock, self.resetn, False)
-        
+
+        # DMA
+        self.c2h_write_source_0 = AxiStreamSource(AxiStreamBus.from_prefix(
+            dut, "s_axis_c2h_0"), self.clock, self.resetn, False)
+        self.c2h_read_sink_0 = AxiStreamSink(AxiStreamBus.from_prefix(
+            dut, "m_axis_c2h_0"), self.clock, self.resetn, False)
+        self.c2h_write_source_1 = AxiStreamSource(AxiStreamBus.from_prefix(
+            dut, "s_axis_c2h_1"), self.clock, self.resetn, False)
+        self.c2h_read_sink_1 = AxiStreamSink(AxiStreamBus.from_prefix(
+            dut, "m_axis_c2h_1"), self.clock, self.resetn, False)
+
     async def send_data(self, channel, data):
         if channel == 0:
             await self.c2h_write_source_0.send(data)
         else:
             await self.c2h_write_source_1.send(data)
-            
+
     async def recv_data(self, channel):
-        if channel == 0 :
+        if channel == 0:
             data = await self.c2h_read_sink_0.read()
         else:
             data = await self.c2h_read_sink_1.read()
         data = bytes(''.join([chr(item) for item in data]), encoding='UTF-8')
         return data
-        
+
     def conbine_bar(self, bar):
         self.ep_bar = bar
-    
-    async def write_register(self, addr:int, x:int):
+
+    async def write_register(self, addr: int, x: int):
         x = x & 0xFFFFFFFF
         self.log.debug("BdmaTb: write register at %d, value %d" % (addr, x))
-        await self.ep_bar.write(addr * 4, x.to_bytes(4, byteorder='little', signed=False))    
-    
+        await self.ep_bar.write(addr * 4, x.to_bytes(4, byteorder='little', signed=False))
+
     async def write_pa_table(self, channel, page_offset, pa):
         base_addr = 512 + channel * 1024
         page_offset = page_offset & 0x1FF
@@ -391,7 +420,7 @@ class BdmaSimpleTb(BdmaTb):
         paHi = (pa >> 32) & 0xFFFFFFFF
         await self.write_register(base_addr + 2*page_offset + 1, paLo)
         await self.write_register(base_addr + 2*page_offset, paHi)
-        
+
     async def memory_map(self):
         self.log.info("BdmaTb: Starting memory map...")
         await self.write_pa_table(0, 1, 123456)
@@ -400,7 +429,7 @@ class BdmaSimpleTb(BdmaTb):
             await self.write_pa_table(0, i, 4096*i)
             await self.write_pa_table(1, i, 4096*i)
         await Timer(4 * 512 * 2 * 2, units='ns')
-        
+
     async def submit_transfer(self, channel, addr, length, isWrite=True):
         addrLo = addr & 0xFFFFFFFF
         addrHi = (addr >> 32) & 0xFFFFFFFF
@@ -409,30 +438,33 @@ class BdmaSimpleTb(BdmaTb):
         await self.write_register(base_addr + 2, addrHi)
         await self.write_register(base_addr + 3, length)
         await self.write_register(base_addr, int(isWrite))
-        
+
     async def run_single_write_once(self, channel, addr, data):
         length = len(data)
-        self.log.info("Conduct DMA single write: channel %d addr %d, length %d, char %c", channel, addr, length, data[0])
+        self.log.info("Conduct DMA single write: channel %d addr %d, length %d, char %c",
+                      channel, addr, length, data[0])
         await self.submit_transfer(channel, addr, length, True)
         await self.send_data(channel, data)
-    
+
     async def run_single_read_once(self, channel, addr, length):
-        self.log.info("Conduct DMA single read: channel %d addr %d, length %d", channel, addr, length)
+        self.log.info(
+            "Conduct DMA single read: channel %d addr %d, length %d", channel, addr, length)
         await self.submit_transfer(channel, addr, length, False)
         data = await self.recv_data(channel)
-        self.log.info("Read data from RootComplex successfully, recv length %d, req length %d", len(data), length)
+        self.log.info(
+            "Read data from RootComplex successfully, recv length %d, req length %d", len(data), length)
         return data
-            
-            
+
+
 class BdmaLoopTb(BdmaTb):
     def conbine_bar(self, bar):
         self.ep_bar = bar
-    
-    async def write_register(self, addr:int, x:int):
+
+    async def write_register(self, addr: int, x: int):
         x = x & 0xFFFFFFFF
         self.log.debug("BdmaTb: write register at %d, value %d" % (addr, x))
-        await self.ep_bar.write(addr * 4, x.to_bytes(4, byteorder='little', signed=False))    
-    
+        await self.ep_bar.write(addr * 4, x.to_bytes(4, byteorder='little', signed=False))
+
     async def write_pa_table(self, channel, page_offset, pa):
         base_addr = 512 + channel * 1024
         page_offset = page_offset & 0x1FF
@@ -449,7 +481,7 @@ class BdmaLoopTb(BdmaTb):
             await self.write_pa_table(0, i, 4096*i)
             await self.write_pa_table(1, i, 4096*i)
         await Timer(4 * 512 * 2 * 2, units='ns')
-        
+
     async def submit_transfer(self, channel, addr, length, isWrite=True):
         addrLo = addr & 0xFFFFFFFF
         addrHi = (addr >> 32) & 0xFFFFFFFF
@@ -458,13 +490,13 @@ class BdmaLoopTb(BdmaTb):
         await self.write_register(base_addr + 2, addrHi)
         await self.write_register(base_addr + 3, length)
         await self.write_register(base_addr, int(isWrite))
-        
-    async def run_single_write_once(self, channel, addr, length):
-        self.log.info("Conduct DMA single write: channel %d addr %d, length %d", channel, addr, length)
-        await self.submit_transfer(channel, addr, length, True)
-    
-    async def run_single_read_once(self, channel, addr, length):
-        self.log.info("Conduct DMA single read: channel %d addr %d, length %d", channel, addr, length)
-        await self.submit_transfer(channel, addr, length, False)
 
-    
+    async def run_single_write_once(self, channel, addr, length):
+        self.log.info(
+            "Conduct DMA single write: channel %d addr %d, length %d", channel, addr, length)
+        await self.submit_transfer(channel, addr, length, True)
+
+    async def run_single_read_once(self, channel, addr, length):
+        self.log.info(
+            "Conduct DMA single read: channel %d addr %d, length %d", channel, addr, length)
+        await self.submit_transfer(channel, addr, length, False)

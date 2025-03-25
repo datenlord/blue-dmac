@@ -159,6 +159,7 @@ module mkDmaC2HPipe#(DmaPathNo pathIdx)(DmaC2HPipe);
 
     mkConnection(dataInFifo, writeCore.dataFifoIn);
 
+
     rule reqDeMux if (isInitDoneReg);
         let req = reqInFifo.first;
         reqInFifo.deq;
@@ -304,13 +305,17 @@ module mkC2HReadCore#(DmaPathNo pathIdx)(C2HReadCore);
         end 
         if (isStreamValid) begin
             reshapeStrad.streamFifoIn.enq(stream);
+            // $display("time=%0t, parse from straddle, tag: %d, cmpl status: %d", $time, tag, pack(isCompleted), fshow(stream));
             if (stream.isFirst) begin
                 tagFifo.enq(tag);
                 completedFifo.enq(isCompleted);
             end
         end
+        else begin
+            // $display("time=%0t, parse from straddle not valid, tag: %d, cmpl status: %d", $time, tag, pack(isCompleted), ", stream=", fshow(stream), ", sdStream=", fshow(sdStream));
+        end
         isStreamValidReg <= isStreamValid;
-        // $display("parse from straddle, tag: %d, cmpl status: %d", tag, pack(isCompleted), fshow(stream));
+        
     endrule
 
     // Pipeline stage 2: remove the descriptor in the head of each TLP
@@ -330,7 +335,7 @@ module mkC2HReadCore#(DmaPathNo pathIdx)(C2HReadCore);
         end
         stream.isLast = isCompleted && stream.isLast;   //Re-define the stream boundary
         stream.isFirst = stream.isFirst && (!chunkFlagRegs[tag]);
-        cBuffer.append.enq(tuple3(tag, stream, stream.isLast));
+        cBuffer.append.enq(tuple3(unpack(pack(tag)), stream, stream.isLast));
         if (stream.isLast) begin
             // $display($time, "ns SIM INFO @ mkDmaC2HReadCore%d: a chunk is completed in cBuffer, tag: %d", pathIdx, tag);
             rcvdFlag = False;
@@ -344,7 +349,7 @@ module mkC2HReadCore#(DmaPathNo pathIdx)(C2HReadCore);
         let stream = cBuffer.drain.first;
         cBuffer.drain.deq;
         reshapeRcb.streamFifoIn.enq(stream);
-        // $display("cbuf output", fshow(stream));
+        // $display("time=%0t, cbuf output", $time, fshow(stream));
     endrule
 
     // Pipeline stage 4: there may be bubbles in the first and last DataStream of a request because of MRRS split
@@ -367,6 +372,11 @@ module mkC2HReadCore#(DmaPathNo pathIdx)(C2HReadCore);
         end
         stream.isFirst = stream.isFirst && (rcvReqCntReg == 1);
         reshapeMrrs.streamFifoIn.enq(stream);
+        // $display(
+        //     "time=%0t", $time, ", mkC2HReadCore reshapeMRRS", 
+        //     ", pathIdx=", fshow(pathIdx),
+        //     ", stream=", fshow(stream)
+        // );
     endrule
 
     // Pipeline stage 1: split to req to MRRS chunks
@@ -380,6 +390,11 @@ module mkC2HReadCore#(DmaPathNo pathIdx)(C2HReadCore);
             tag       : 0
         };
         chunkSplitor.dmaRequestFifoIn.enq(exReq);
+
+        if (req.length > fromInteger(valueOf(BUS_BOUNDARY))) begin
+            $display("length too large. the max value is limited by READ_REQ_CNT_WIDTH, if the read cplt packet cnt exceed this value, undefined behaviour will occur.");
+            $finish(1);
+        end
     endrule
 
     // Pipeline stage 2: generate read descriptor
@@ -452,10 +467,18 @@ module mkC2HWriteCore#(DmaPathNo pathIdx)(C2HWriteCore);
     StreamShiftAlignToDw streamAlign <- mkStreamShiftAlignToDw(fromInteger(valueOf(TDiv#(DES_RQ_DESCRIPTOR_WIDTH, BYTE_WIDTH))));
     RqDescriptorGenerator rqDescGenerator <- mkRqDescriptorGenerator(True);
 
+    // rule debug;
+    //     if (!wrReqInFifo.notEmpty) $display($time, "ns SIM INFO @ mkDmaC2HWriteCore%d: emptyQueue wrReqInFifo", pathIdx);
+    //     if (!dataInFifo.notEmpty) $display($time, "ns SIM INFO @ mkDmaC2HWriteCore%d: emptyQueue dataInFifo", pathIdx);
+    //     if (!chunkSplit.reqFifoIn.notFull) $display($time, "ns SIM INFO @ mkDmaC2HWriteCore%d: fullQueue chunkSplit.reqFifoIn", pathIdx);
+    //     if (!chunkSplit.dataFifoIn.notFull) $display($time, "ns SIM INFO @ mkDmaC2HWriteCore%d: fullQueue chunkSplit.dataFifoIn", pathIdx);
+
+    // endrule
+
     // Pipeline stage 1: split the whole write request to chunks, latency = 3
     rule splitToChunks;
         let wrStream = dataInFifo.first;
-        // if (wrStream.isLast || wrStream.isFirst) begin $display($time, "ns SIM INFO @ mkC2HWriteCore: ", fshow(wrStream)); end
+        // $display($time, "ns SIM INFO @ mkC2HWriteCore: ", fshow(wrStream), fshow(wrReqInFifo.notEmpty), fshow(chunkSplit.dataFifoIn.notFull), fshow(chunkSplit.reqFifoIn.notFull));
         if (wrStream.isFirst && wrReqInFifo.notEmpty) begin
             wrReqInFifo.deq;
             let wrReq = wrReqInFifo.first;
@@ -468,6 +491,10 @@ module mkC2HWriteCore#(DmaPathNo pathIdx)(C2HWriteCore);
             chunkSplit.reqFifoIn.enq(exReq);
             dataInFifo.deq;
             chunkSplit.dataFifoIn.enq(wrStream);
+            if (wrReq.length > fromInteger(valueOf(BUS_BOUNDARY))) begin
+                $display("length too large. the max value is limited by READ_REQ_CNT_WIDTH.");
+                $finish(1);
+            end
         end
         else if (!wrStream.isFirst) begin
             dataInFifo.deq;
@@ -490,7 +517,7 @@ module mkC2HWriteCore#(DmaPathNo pathIdx)(C2HWriteCore);
             let startAddrOffset = byteModDWord(exReq.startAddr);
             streamAlign.setAlignMode(unpack(startAddrOffset));
             rqDescGenerator.exReqFifoIn.enq(exReq);
-            $display($time, "ns SIM INFO @ mkDmaC2HWriteCore%d: tx a new write chunk, tag:%d, addr:%d, length:%d", pathIdx, convertSlotTokenToTag(tagReg, pathIdx), chunkReq.startAddr, chunkReq.length);
+            // $display($time, "ns SIM INFO @ mkDmaC2HWriteCore%d: tx a new write chunk, tag:%d, addr:%d, length:%d", pathIdx, convertSlotTokenToTag(tagReg, pathIdx), chunkReq.startAddr, chunkReq.length);
         end
         if (chunkSplit.chunkDataFifoOut.notEmpty) begin
             let chunkDataStream = chunkSplit.chunkDataFifoOut.first;

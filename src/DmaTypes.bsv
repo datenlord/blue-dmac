@@ -28,6 +28,12 @@ typedef Bit#(1) ByteParity;
 typedef 4096                                BUS_BOUNDARY;
 typedef TAdd#(1, TLog#(BUS_BOUNDARY))       BUS_BOUNDARY_WIDTH;
 
+typedef 128                                 DEFAULT_MPS;
+typedef TLog#(DEFAULT_MPS)                  DEFAULT_MPS_WIDTH;
+typedef 128                                 DEFAULT_MRRS;
+typedef TLog#(DEFAULT_MRRS)                 DEFAULT_MRRS_WIDTH;
+
+
 typedef 128                                 DEFAULT_TLP_SIZE;
 typedef TLog#(DEFAULT_TLP_SIZE)             DEFAULT_TLP_SIZE_WIDTH;
 // Only support max to 512bytes TLP for resouce saving
@@ -37,10 +43,10 @@ typedef Bit#(BUS_BOUNDARY_WIDTH)            TlpPayloadSize;
 typedef Bit#(TLog#(BUS_BOUNDARY_WIDTH))     TlpPayloadSizeWidth;
 
 typedef struct {
-    TlpPayloadSize      mps;
-    TlpPayloadSizeWidth mpsWidth;
-    TlpPayloadSize      mrrs;
-    TlpPayloadSizeWidth mrrsWidth;
+    TlpPayloadSize      mps;        // 13
+    TlpPayloadSizeWidth mpsWidth;   // 4
+    TlpPayloadSize      mrrs;       // 13
+    TlpPayloadSizeWidth mrrsWidth;  // 4
 } TlpSizeCfg deriving(Bits, Eq, Bounded, FShow);
 
 typedef 2 CONCAT_STREAM_NUM;
@@ -228,9 +234,9 @@ typedef TAdd#(1, TLog#(PCIE_STRADDLE_NUM)) PCIE_STRADDLE_WIDTH;
 typedef Bit#(PCIE_STRADDLE_WIDTH) StraddleNo;
 
 // Reorder types
-typedef TSub#(DES_NONEXTENDED_TAG_WIDTH, 1) SLOT_TOKEN_WIDTH;
+typedef TSub#(DES_TAG_WIDTH, 1) SLOT_TOKEN_WIDTH;
 typedef Bit#(SLOT_TOKEN_WIDTH) SlotToken;
-typedef 16 SLOT_PER_PATH;
+typedef 128 SLOT_PER_PATH;
 typedef TAdd#(1, TDiv#(MAX_TLP_SIZE, BYTE_EN_WIDTH)) MAX_STREAM_NUM_PER_COMPLETION;
 
 // Internal Registers 

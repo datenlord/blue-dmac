@@ -44,6 +44,7 @@ module mkBdmaControllerBypassWrapper(BdmaControllerBypassWrapper#(sz_csr_addr, s
     Wire#(Bool) linkUpWire <- mkWire;
     Reg#(Bool) linkUpReg  <- mkReg(False);
     Reg#(Bool) cfgFlagReg <- mkDReg(False);
+    Reg#(DWord) cfgReadDelayCounterReg <- mkReg(0);
 
     BdmaC2HPipe c2hPipeA <- mkBdmaC2HPipe(0);
     BdmaC2HPipe c2hPipeB <- mkBdmaC2HPipe(1);
@@ -66,10 +67,14 @@ module mkBdmaControllerBypassWrapper(BdmaControllerBypassWrapper#(sz_csr_addr, s
     mkConnection(h2cPipe.tlpDataFifoOut, cmplAdapter.dmaDataFifoIn);
 
     rule detectLink if (linkUpWire && !linkUpReg);
-        configurator.initCfg;
-        cfgFlagReg <= True;
-        linkUpReg <= True;
-        $display($time, "ns SIM INFO @ BLUE-DMAC: PCIe link is up!");
+        cfgReadDelayCounterReg <= cfgReadDelayCounterReg + 1;
+
+        if (cfgReadDelayCounterReg > 2000) begin
+            configurator.initCfg;
+            cfgFlagReg <= True;
+            linkUpReg <= True;
+            $display($time, "ns SIM INFO @ BLUE-DMAC: PCIe link is up!");
+        end
     endrule
 
     rule setCfg if (cfgFlagReg);
@@ -116,17 +121,17 @@ interface DmaController;
  
     // Raw PCIe interfaces, connected to the Xilinx PCIe IP
     (* prefix = "" *)interface RawXilinxPcieIp       rawPcie;
+    (* prefix = "" *)method  TlpSizeCfg              tlpSizeDebugPort;
 endinterface
 
 // TODO : connect Configurator to other modules
 (* synthesize *)
 module mkDmaController(DmaController);
     Vector#(DMA_PATH_NUM, DmaC2HPipe) c2hPipes = newVector;
+    Reg#(TlpSizeCfg) tlpSizeDebugPortReg <- mkReg(unpack(0));
 
     Wire#(Bool) linkUpWire <- mkWire;
     
-    Reg#(Bool) linkUpReg  <- mkReg(False);
-    Reg#(Bool) cfgFlagReg <- mkDReg(False);
 
     for (DmaPathNo pathIdx = 0; pathIdx < fromInteger(valueOf(DMA_PATH_NUM)); pathIdx = pathIdx + 1) begin
         c2hPipes[pathIdx] <- mkDmaC2HPipe(pathIdx);
@@ -157,19 +162,16 @@ module mkDmaController(DmaController);
     mkConnection(cmplAdapter.dmaDataFifoOut, h2cPipe.tlpDataFifoIn);
     mkConnection(h2cPipe.tlpDataFifoOut, cmplAdapter.dmaDataFifoIn);
 
-    rule detectLink if (linkUpWire && !linkUpReg);
+    rule forwardConfig;
         configurator.initCfg;
-        cfgFlagReg <= True;
-        linkUpReg <= True;
-        $display($time, "ns SIM INFO @ BLUE-DMAC: PCIe link is up!");
-    endrule
-
-    rule setCfg if (cfgFlagReg);
         let tlpSizeCfg <- configurator.tlpSizeCfg.get;
         for (DmaPathNo pathIdx = 0; pathIdx < fromInteger(valueOf(DMA_PATH_NUM)); pathIdx = pathIdx + 1) begin
             c2hPipes[pathIdx].tlpSizeCfg.put(tlpSizeCfg);
         end
-        $display($time, "ns SIM INFO @ BLUE-DMAC: Get PCIe configurations, mps:%d, mrrs:%d", tlpSizeCfg.mps, tlpSizeCfg.mrrs);
+        tlpSizeDebugPortReg <= tlpSizeCfg;
+
+        // $display($time, "ns SIM INFO @ BLUE-DMAC: PCIe link is up!");
+
     endrule
 
     // User Logic Ifc
@@ -192,6 +194,8 @@ module mkDmaController(DmaController);
             linkUpWire <= isLinkUp;
         endmethod
     endinterface
+
+    method tlpSizeDebugPort = tlpSizeDebugPortReg;
 endmodule
 
 // For Verilog User
@@ -338,10 +342,12 @@ interface RawBypassDmaController;
 
     // Raw PCIe interfaces, connected to the Xilinx PCIe IP
     (* prefix = "" *)        interface RawXilinxPcieIp       rawPcie;
+    method Bool sys_reset;
 endinterface
 
 (* synthesize *)
 module mkRawBypassDmaController(RawBypassDmaController);
+    Reg#(Bit#(32)) sysResetCounterReg <- mkReg(0);
     DmaController dmac <- mkDmaController;
     GenericCsr    dummyCsr <- mkDummyCsr;
 
@@ -359,6 +365,12 @@ module mkRawBypassDmaController(RawBypassDmaController);
     mkConnection(dmac.innerReqFifoOut, dummyCsr.reqFifoIn);
     mkConnection(dummyCsr.respFifoOut, dmac.innerRespFifoIn);
     
+    rule sysResetHandler;
+        if (sysResetCounterReg < 5000) begin
+            sysResetCounterReg <= sysResetCounterReg + 1;
+        end
+    endrule
+
     interface dmaWrData0 = dmaWrData0Ifc;
     interface dmaDesc0   = dmaDesc0Ifc;  
     interface dmaRdData0 = dmaRdData0Ifc;
@@ -368,7 +380,11 @@ module mkRawBypassDmaController(RawBypassDmaController);
     interface dmaCsrResp = csrRespIfc;
     interface dmaCsrReq  = csrReqIfc;
 
+
+
     interface rawPcie = dmac.rawPcie;
+
+    method Bool sys_reset = sysResetCounterReg == 5000;
 endmodule
 
 interface RawSimpleDmaController;
@@ -423,32 +439,189 @@ interface RawLoopDmaController;
 
     // Raw PCIe interfaces, connected to the Xilinx PCIe IP
     (* prefix = "" *)        interface RawXilinxPcieIp       rawPcie;
+    (* prefix = "" *)        method  TlpSizeCfg              tlpSizeDebugPort;
+    method Bool sys_reset;
 endinterface
+
+// (* synthesize *)
+// module mkRawTestDmaController(RawLoopDmaController);
+//     Reg#(Bit#(32)) sysResetCounterReg <- mkReg(0);
+//     DmaController dmac       <- mkDmaController;
+//     DmaSimpleCore simpleCore <- mkDmaSimpleCore;
+//     GenericCsr    dummyCsr   <- mkDummyCsr;
+//     Vector#(DMA_PATH_NUM, FIFOF#(DataStream)) dataFifo <- replicateM(mkSizedBRAMFIFOF(valueOf(BUS_BOUNDARY)));
+
+//     for (DmaPathNo pathIdx = 0; pathIdx < fromInteger(valueOf(DMA_PATH_NUM)); pathIdx = pathIdx + 1 ) begin
+//         mkConnection(dataFifo[pathIdx], dmac.c2hDataFifoIn[pathIdx]);
+//         mkConnection(dmac.c2hDataFifoOut[pathIdx], dataFifo[pathIdx]);
+//         mkConnection(dmac.c2hReqFifoIn[pathIdx], simpleCore.c2hReqFifoOut[pathIdx]);
+//     end
+
+//     mkConnection(dmac.innerReqFifoOut, simpleCore.reqFifoIn);
+//     mkConnection(dmac.innerRespFifoIn, simpleCore.respFifoOut);
+
+//     mkConnection(dmac.h2cReqFifoOut, dummyCsr.reqFifoIn);
+//     mkConnection(dmac.h2cRespFifoIn, dummyCsr.respFifoOut);
+
+//     rule logRead;
+//         let stream = dmac.c2hDataFifoOut[0].first;
+//         $display($time, "ns SIM INFO @ mkRawTestDmaController: recv stream, isFirst %d, isLast %d, data %h", pack(stream.isFirst), pack(stream.isLast), stream.data);
+//     endrule
+
+
+
+//     rule sysResetHandler;
+//         if (sysResetCounterReg < 1000) begin
+//             sysResetCounterReg <= sysResetCounterReg + 1;
+//         end
+//     endrule
+
+//     interface rawPcie = dmac.rawPcie;
+
+//     method Bool sys_reset = sysResetCounterReg == 1000;
+//     method tlpSizeDebugPort = dmac.tlpSizeDebugPort;
+
+// endmodule
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 (* synthesize *)
 module mkRawTestDmaController(RawLoopDmaController);
+    Reg#(Bit#(32)) sysResetCounterReg <- mkReg(0);
     DmaController dmac       <- mkDmaController;
-    DmaSimpleCore simpleCore <- mkDmaSimpleCore;
-    GenericCsr    dummyCsr   <- mkDummyCsr;
-    Vector#(DMA_PATH_NUM, FIFOF#(DataStream)) dataFifo <- replicateM(mkSizedBRAMFIFOF(valueOf(BUS_BOUNDARY)));
+    FIFOF#(DataStream) dataFifo <- mkFIFOF;
 
-    for (DmaPathNo pathIdx = 0; pathIdx < fromInteger(valueOf(DMA_PATH_NUM)); pathIdx = pathIdx + 1 ) begin
-        mkConnection(dataFifo[pathIdx], dmac.c2hDataFifoIn[pathIdx]);
-        mkConnection(dmac.c2hDataFifoOut[pathIdx], dataFifo[pathIdx]);
-        mkConnection(dmac.c2hReqFifoIn[pathIdx], simpleCore.c2hReqFifoOut[pathIdx]);
-    end
+    mkConnection(dataFifo, dmac.c2hDataFifoIn[1]);
+    // mkConnection(dmac.c2hDataFifoOut[0], dataFifo);
 
-    mkConnection(dmac.innerReqFifoOut, simpleCore.reqFifoIn);
-    mkConnection(dmac.innerRespFifoIn, simpleCore.respFifoOut);
 
-    mkConnection(dmac.h2cReqFifoOut, dummyCsr.reqFifoIn);
-    mkConnection(dmac.h2cRespFifoIn, dummyCsr.respFifoOut);
+    Reg#(Bit#(32)) srcAddrLowReg <- mkReg(0);
+    Reg#(Bit#(32)) srcAddrHighReg <- mkReg(0);
+    Reg#(Bit#(32)) dstAddrLowReg <- mkReg(0);
+    Reg#(Bit#(32)) dstAddrHighReg <- mkReg(0);
+    Reg#(Bit#(32)) lengthReg <- mkReg(0);
+    Reg#(Bit#(32)) modeReg <- mkReg(0);
+    Reg#(Bit#(32)) batchReadCounterReg[2] <- mkCReg(2, 0);
+    Reg#(Bit#(32)) batchWriteCounterReg[2] <- mkCReg(2, 0);
+
+    rule forwardData;
+        dataFifo.enq(dmac.c2hDataFifoOut[0].first);
+        dmac.c2hDataFifoOut[0].deq;
+        // $display($time, "ns SIM INFO @ mkRawTestDmaController: forwardData data=", fshow(dmac.c2hDataFifoOut[0].first));
+    endrule
+
+    rule handleCsrAccess;
+        let req = dmac.h2cReqFifoOut.first;
+        dmac.h2cReqFifoOut.deq;
+        $display($time, "ns SIM INFO @ mkRawTestDmaController: handleCsrAccess req=", fshow(req));
+        if (req.isWrite) begin
+            case (req.addr)
+                'h0004: begin
+                    srcAddrLowReg <= unpack(pack(req.value));
+                end
+                'h0008: begin
+                    srcAddrHighReg <= unpack(pack(req.value));
+                end
+                'h000c: begin
+                    dstAddrLowReg <= unpack(pack(req.value));
+                end
+                'h0010: begin
+                    dstAddrHighReg <= unpack(pack(req.value));
+                end
+                'h0014: begin
+                    lengthReg <= unpack(pack(req.value));
+                end
+                'h0018: begin
+                    batchReadCounterReg[1] <= unpack(pack(req.value));
+                    batchWriteCounterReg[1] <= unpack(pack(req.value));
+                end
+            endcase
+        end
+        else begin
+            let resp = CsrResponse {
+                addr: req.addr,
+                value: ?
+            };
+            case (req.addr)
+                'h0004: begin
+                    resp.value = unpack(pack(srcAddrLowReg));
+                end
+                'h0008: begin
+                    resp.value = unpack(pack(srcAddrHighReg));
+                end
+                'h000c: begin
+                    resp.value = unpack(pack(dstAddrLowReg));
+                end
+                'h0010: begin
+                    resp.value = unpack(pack(dstAddrHighReg));
+                end
+                'h0014: begin
+                    resp.value = unpack(pack(lengthReg));
+                end
+                'h0018: begin
+                    resp.value = unpack(pack(batchReadCounterReg[1]));
+                end
+
+            endcase
+            dmac.innerRespFifoIn.enq(resp);
+        end
+    endrule
+
+    
+    // rule debug;
+    //     if (!dmac.c2hReqFifoIn[0].notFull) $display("dmac.c2hReqFifoIn[0] Full");
+    //     if (!dmac.c2hReqFifoIn[1].notFull) $display("dmac.c2hReqFifoIn[1] Full");
+    // endrule
+
+    rule batchReadRequest if (batchReadCounterReg[0] != 0);
+        batchReadCounterReg[0] <= batchReadCounterReg[0] - 1;
+        dmac.c2hReqFifoIn[0].enq(DmaRequest{
+            startAddr:unpack({srcAddrHighReg, srcAddrLowReg}),
+            length: unpack(lengthReg),
+            isWrite: False
+        });
+        $display($time, "ns SIM INFO @ mkRawTestDmaController: batchRequest batchReadCounterReg=", fshow(batchReadCounterReg[0]));
+    endrule
+
+    rule batchWriteRequest if (batchWriteCounterReg[0] != 0);
+        batchWriteCounterReg[0] <= batchWriteCounterReg[0] - 1;
+        dmac.c2hReqFifoIn[1].enq(DmaRequest{
+            startAddr:unpack({dstAddrHighReg, dstAddrLowReg}),
+            length: unpack(lengthReg),
+            isWrite: True
+        });
+
+        $display($time, "ns SIM INFO @ mkRawTestDmaController: batchRequest batchWriteCounterReg=", fshow(batchWriteCounterReg[0]));
+
+    endrule
 
     rule logRead;
         let stream = dmac.c2hDataFifoOut[0].first;
         $display($time, "ns SIM INFO @ mkRawTestDmaController: recv stream, isFirst %d, isLast %d, data %h", pack(stream.isFirst), pack(stream.isLast), stream.data);
     endrule
 
+
+    
+    rule sysResetHandler;
+        if (sysResetCounterReg < 1000) begin
+            sysResetCounterReg <= sysResetCounterReg + 1;
+        end
+    endrule
+
     interface rawPcie = dmac.rawPcie;
+
+    method tlpSizeDebugPort = dmac.tlpSizeDebugPort;
+    method Bool sys_reset = sysResetCounterReg == 1000;
 
 endmodule

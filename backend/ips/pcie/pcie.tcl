@@ -15,7 +15,7 @@ set_property -dict [list CONFIG.PL_LINK_CAP_MAX_LINK_SPEED {8.0_GT/s} \
     CONFIG.pf0_bar1_scale {Megabytes} \
     CONFIG.pf0_bar1_size {2} \
     CONFIG.pf0_dev_cap_max_payload {512_bytes} \
-    CONFIG.extended_tag_field {false} \
+    CONFIG.extended_tag_field {true} \
     CONFIG.pf1_bar0_size {4} \
     CONFIG.pf1_bar1_enabled {true} \
     CONFIG.pf1_bar1_type {Memory} \

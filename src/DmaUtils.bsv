@@ -14,7 +14,7 @@ typedef TAdd#(1, TLog#(TDiv#(BUS_BOUNDARY, BYTE_EN_WIDTH))) DATA_BEATS_WIDTH;
 typedef Bit#(DATA_BEATS_WIDTH)                              DataBeats;                 
 
 function Tag convertSlotTokenToTag(SlotToken token, DmaPathNo pathIdx);
-    Tag tag = zeroExtend(token) | (zeroExtend(pathIdx) << (valueOf(DES_NONEXTENDED_TAG_WIDTH)-1));
+    Tag tag = zeroExtend(token) | (zeroExtend(pathIdx) << (valueOf(DES_TAG_WIDTH)-1));
     return tag;
 endfunction
 

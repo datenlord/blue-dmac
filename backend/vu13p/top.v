@@ -52,32 +52,32 @@ module top#(
   wire                                       user_reset;
 
  (*mark_debug, mark_debug_clock="user_clk" *)wire                                       s_axis_rq_tlast;
- (*mark_debug, mark_debug_clock="user_clk" *)wire                 [C_DATA_WIDTH-1:0]    s_axis_rq_tdata;
-  wire          [AXI4_RQ_TUSER_WIDTH-1:0]    s_axis_rq_tuser;
+  (*mark_debug, mark_debug_clock="user_clk" *)wire                 [C_DATA_WIDTH-1:0]    s_axis_rq_tdata;
+  (*mark_debug, mark_debug_clock="user_clk" *)wire          [AXI4_RQ_TUSER_WIDTH-1:0]    s_axis_rq_tuser;
   wire                   [KEEP_WIDTH-1:0]    s_axis_rq_tkeep;
   (*mark_debug, mark_debug_clock="user_clk" *)wire                              [3:0]    s_axis_rq_tready;
   (*mark_debug, mark_debug_clock="user_clk" *)wire                                       s_axis_rq_tvalid;
 
   (*mark_debug, mark_debug_clock="user_clk" *)wire                 [C_DATA_WIDTH-1:0]    m_axis_rc_tdata;
-  wire          [AXI4_RC_TUSER_WIDTH-1:0]    m_axis_rc_tuser;
+  (*mark_debug, mark_debug_clock="user_clk" *)wire          [AXI4_RC_TUSER_WIDTH-1:0]    m_axis_rc_tuser;
   (*mark_debug, mark_debug_clock="user_clk" *)wire                                       m_axis_rc_tlast;
   wire                   [KEEP_WIDTH-1:0]    m_axis_rc_tkeep;
   (*mark_debug, mark_debug_clock="user_clk" *)wire                                       m_axis_rc_tvalid;
   (*mark_debug, mark_debug_clock="user_clk" *)wire                                       m_axis_rc_tready;
 
   (*mark_debug, mark_debug_clock="user_clk" *)wire                 [C_DATA_WIDTH-1:0]    m_axis_cq_tdata;
-  wire          [AXI4_CQ_TUSER_WIDTH-1:0]    m_axis_cq_tuser;
+  (*mark_debug, mark_debug_clock="user_clk" *)wire          [AXI4_CQ_TUSER_WIDTH-1:0]    m_axis_cq_tuser;
   (*mark_debug, mark_debug_clock="user_clk" *)wire                                       m_axis_cq_tlast;
   wire                   [KEEP_WIDTH-1:0]    m_axis_cq_tkeep;
   (*mark_debug, mark_debug_clock="user_clk" *)wire                                       m_axis_cq_tvalid;
   (*mark_debug, mark_debug_clock="user_clk" *)wire                                       m_axis_cq_tready;
 
   (*mark_debug, mark_debug_clock="user_clk" *)wire                 [C_DATA_WIDTH-1:0]    s_axis_cc_tdata;
-  wire          [AXI4_CC_TUSER_WIDTH-1:0]    s_axis_cc_tuser;
+  (*mark_debug, mark_debug_clock="user_clk" *)wire          [AXI4_CC_TUSER_WIDTH-1:0]    s_axis_cc_tuser;
   (*mark_debug, mark_debug_clock="user_clk" *)wire                                       s_axis_cc_tlast;
   wire                   [KEEP_WIDTH-1:0]    s_axis_cc_tkeep;
   (*mark_debug, mark_debug_clock="user_clk" *)wire                                       s_axis_cc_tvalid;
-  wire                              [3:0]    s_axis_cc_tready;
+  (*mark_debug, mark_debug_clock="user_clk" *)wire                              [3:0]    s_axis_cc_tready;
 
   wire                              [3:0]    pcie_tfc_nph_av;
   wire                              [3:0]    pcie_tfc_npd_av;
@@ -202,6 +202,12 @@ module top#(
     wire                                    global_reset_100mhz_clk;
     wire                                    sys_rst_n_c;
 
+
+    wire [33 : 0] tlpSizeDebugPort;
+    wire RDY_tlpSizeDebugPort;
+
+
+
   // Ref clock buffer
   IBUFDS_GTE4 # (.REFCLK_HROW_CK_SEL(2'b00)) refclk_ibuf (.O(sys_clk_gt), .ODIV2(sys_clk), .I(sys_clk_p), .CEB(1'b0), .IB(sys_clk_n));
   // Reset buffer
@@ -234,7 +240,7 @@ module top#(
     .user_clk                                       ( user_clk ),
     .user_reset                                     ( user_reset ),
     .user_lnk_up                                    ( user_lnk_up ),
-    .phy_rdy_out                                    ( phy_rdy_out ),
+    // .phy_rdy_out                                    ( phy_rdy_out ),
   
     .s_axis_rq_tlast                                ( s_axis_rq_tlast ),
     .s_axis_rq_tdata                                ( s_axis_rq_tdata ),
@@ -567,8 +573,13 @@ module top#(
     // Interrupt Interface Signals
     .cfg_interrupt_int                              ( cfg_interrupt_int ),
     .cfg_interrupt_pending                          ( cfg_interrupt_pending ),
-    .cfg_interrupt_sent                             ( cfg_interrupt_sent )
+    .cfg_interrupt_sent                             ( cfg_interrupt_sent ),
 
+    // debug
+    .tlpSizeDebugPort(tlpSizeDebugPort),
+    .RDY_tlpSizeDebugPort(RDY_tlpSizeDebugPort)
+
+    
     //------------------------------------------------------------------------------------//
     // DMA IFC
     //------------------------------------------------------------------------------------//

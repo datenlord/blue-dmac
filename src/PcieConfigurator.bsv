@@ -16,7 +16,6 @@ endinterface
 module mkPcieConfigurator(PcieConfigurator);
     // TODO: the powerStateChangeAck must waitng for completing Done
     Reg#(Bool) powerStateChangeIntrReg <- mkReg(False);
-    Reg#(Bool) isInitDoneReg <- mkDReg(False);
 
     // status wires
     Wire#(PcieCfgMaxPayloadSize) mpsSettingWire   <- mkWire;
@@ -26,10 +25,10 @@ module mkPcieConfigurator(PcieConfigurator);
 
     // Cfg Regs
     Reg#(TlpSizeCfg) tlpSizeCfgReg <- mkReg(TlpSizeCfg {
-        mps       : fromInteger(valueOf(DEFAULT_TLP_SIZE)),
-        mpsWidth  : fromInteger(valueOf(DEFAULT_TLP_SIZE_WIDTH)),
-        mrrs      : fromInteger(valueOf(DEFAULT_TLP_SIZE)),
-        mrrsWidth : fromInteger(valueOf(DEFAULT_TLP_SIZE_WIDTH))
+        mps       : fromInteger(valueOf(DEFAULT_MPS)),
+        mpsWidth  : fromInteger(valueOf(DEFAULT_MPS_WIDTH)),
+        mrrs      : fromInteger(valueOf(DEFAULT_MRRS)),
+        mrrsWidth : fromInteger(valueOf(DEFAULT_MRRS_WIDTH))
     });
 
 
@@ -62,7 +61,6 @@ module mkPcieConfigurator(PcieConfigurator);
             mrrs      : mrrs,
             mrrsWidth : mrrsWidth
         };
-        isInitDoneReg <= True;
     endmethod
 
     interface Get tlpSizeCfg;
