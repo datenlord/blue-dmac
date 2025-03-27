@@ -515,10 +515,16 @@ module mkRawTestDmaController(RawLoopDmaController);
     Reg#(Bit#(32)) batchReadCounterReg[2] <- mkCReg(2, 0);
     Reg#(Bit#(32)) batchWriteCounterReg[2] <- mkCReg(2, 0);
 
+
+    // rule debug;
+    //     if (!dmac.c2hDataFifoOut[0].notEmpty) $display("dmac.c2hDataFifoOut[0] Empty");
+    //     if (!dataFifo.notFull) $display("dataFifo Full");
+    // endrule
+
     rule forwardData;
         dataFifo.enq(dmac.c2hDataFifoOut[0].first);
         dmac.c2hDataFifoOut[0].deq;
-        // $display($time, "ns SIM INFO @ mkRawTestDmaController: forwardData data=", fshow(dmac.c2hDataFifoOut[0].first));
+        $display($time, "ns SIM INFO @ mkRawTestDmaController: forwardData data=", fshow(dmac.c2hDataFifoOut[0].first));
     endrule
 
     rule handleCsrAccess;
@@ -579,10 +585,7 @@ module mkRawTestDmaController(RawLoopDmaController);
     endrule
 
     
-    // rule debug;
-    //     if (!dmac.c2hReqFifoIn[0].notFull) $display("dmac.c2hReqFifoIn[0] Full");
-    //     if (!dmac.c2hReqFifoIn[1].notFull) $display("dmac.c2hReqFifoIn[1] Full");
-    // endrule
+
 
     rule batchReadRequest if (batchReadCounterReg[0] != 0);
         batchReadCounterReg[0] <= batchReadCounterReg[0] - 1;

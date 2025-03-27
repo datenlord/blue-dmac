@@ -42,6 +42,8 @@ async def bar_test(dut):
     await dev.enable_device()
     await dev.set_master()
 
+    tb.root_port.downstream_port.link_delay_steps = 428*1000
+
     mem = tb.rc.mem_pool.alloc_region(2*1024*1024)
     for idx in range(32768):
         mem[idx*2:idx*2+2] = idx.to_bytes(2, "little")
@@ -50,18 +52,38 @@ async def bar_test(dut):
     await Timer(5000, "ns")
 
     print(f"before=================={mem[10:15]}")
+
+    desc_transfer_szie = 2048
+
     dev_bar1 = dev.bar_window[1]
     await dev_bar1.write(0x04, (0).to_bytes(4, byteorder='little', signed=False))
     await dev_bar1.write(0x08, (0).to_bytes(4, byteorder='little', signed=False))
 
-    await dev_bar1.write(0x0C, (4).to_bytes(4, byteorder='little', signed=False))
+    await dev_bar1.write(0x0C, (1024*1024).to_bytes(4, byteorder='little', signed=False))
     await dev_bar1.write(0x10, (0).to_bytes(4, byteorder='little', signed=False))
 
-    await dev_bar1.write(0x14, (1024).to_bytes(4, byteorder='little', signed=False))
-    await dev_bar1.write(0x18, (0xFFFFFFFF).to_bytes(4, byteorder='little', signed=False))
+    await dev_bar1.write(0x14, (desc_transfer_szie).to_bytes(4, byteorder='little', signed=False))
+    await dev_bar1.write(0x18, (0xFFF).to_bytes(4, byteorder='little', signed=False))
 
+    calc_time_ns = 5000
+    old_val = int.from_bytes(await dev_bar1.read(0x18, 4), 'little') 
+    old_time = cocotb.utils.get_sim_time("ns")
+    while True:
+        await Timer(calc_time_ns, "ns")
+        new_val = int.from_bytes(await dev_bar1.read(0x18, 4), 'little')
+        new_time = cocotb.utils.get_sim_time("ns")
+        value_delta = old_val - new_val
+        time_delta = new_time-old_time
+        speed = desc_transfer_szie * 8 * (value_delta) / (time_delta)
+        
+        print(f"old_value={old_val}, new_value={new_val}, value_delta={value_delta}, time_delta={time_delta}, speed={speed} Gbps")
 
-    await Timer(100000, "ns")
+        old_val = new_val
+        old_time = new_time
+
+        if new_val == 0:
+            break
+
     print(f"after=================={mem[10:15]}")
 
 def test_dma():

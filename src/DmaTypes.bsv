@@ -37,7 +37,7 @@ typedef TLog#(DEFAULT_MRRS)                 DEFAULT_MRRS_WIDTH;
 typedef 128                                 DEFAULT_TLP_SIZE;
 typedef TLog#(DEFAULT_TLP_SIZE)             DEFAULT_TLP_SIZE_WIDTH;
 // Only support max to 512bytes TLP for resouce saving
-typedef 512                                 MAX_TLP_SIZE;
+typedef 4096                                MAX_TLP_SIZE;
 typedef TLog#(MAX_TLP_SIZE)                 MAX_TLP_SIZE_WIDTH;
 typedef Bit#(BUS_BOUNDARY_WIDTH)            TlpPayloadSize;
 typedef Bit#(TLog#(BUS_BOUNDARY_WIDTH))     TlpPayloadSizeWidth;
@@ -66,7 +66,7 @@ typedef Bit#(TAdd#(1, TLog#(DWORD_BYTES)))    DWordBytePtr;
 typedef Bit#(BYTE_DWORD_SHIFT_WIDTH)          ByteModDWord;
 typedef 2'b11                                 MaxByteModDword;
 
-typedef TSub#(BUS_BOUNDARY_WIDTH, MAX_TLP_SIZE_WIDTH) READ_REQ_CNT_WIDTH;
+typedef TSub#(BUS_BOUNDARY_WIDTH, DEFAULT_TLP_SIZE_WIDTH) READ_REQ_CNT_WIDTH;
 typedef Bit#(READ_REQ_CNT_WIDTH)              DmaReadReqCnt;
 
 typedef struct {
@@ -184,8 +184,8 @@ instance FShow#(StraddleStream);
             "     data    = %h\n", stream.data, 
             "     byteEn  = %b\n", stream.byteEn,
             "     isDoubleFrame = %b\n", stream.isDoubleFrame,
-            "     isFirst = %b", pack(stream.isFirst[0]), ", isLast = %b\n", pack(stream.isLast[0]),
-            "     isFirst = %b", pack(stream.isFirst[1]), ", isLast = %b\n", pack(stream.isLast[1])
+            "     isFirst = %b", pack(stream.isFirst[0]), ", isLast = %b", pack(stream.isLast[0]), ", tag = %d", stream.tag[0], ", isCompleted = ", fshow(stream.isCompleted[0]), "\n",
+            "     isFirst = %b", pack(stream.isFirst[1]), ", isLast = %b", pack(stream.isLast[1]), ", tag = %d", stream.tag[1], ", isCompleted = ", fshow(stream.isCompleted[1])
         ));
     endfunction
 endinstance
@@ -236,7 +236,7 @@ typedef Bit#(PCIE_STRADDLE_WIDTH) StraddleNo;
 // Reorder types
 typedef TSub#(DES_TAG_WIDTH, 1) SLOT_TOKEN_WIDTH;
 typedef Bit#(SLOT_TOKEN_WIDTH) SlotToken;
-typedef 128 SLOT_PER_PATH;
+typedef 32 SLOT_PER_PATH;
 typedef TAdd#(1, TDiv#(MAX_TLP_SIZE, BYTE_EN_WIDTH)) MAX_STREAM_NUM_PER_COMPLETION;
 
 // Internal Registers 

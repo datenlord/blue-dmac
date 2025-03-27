@@ -42,8 +42,8 @@ class BdmaTb(object):
 
         # PCIe
         self.rc = RootComplex()
-        self.rc.max_payload_size = 3
-        self.rc.max_read_request_size = 3
+        self.rc.max_payload_size = 1
+        self.rc.max_read_request_size = 2
 
         self.rc.log.setLevel(logging.INFO)
 
@@ -275,7 +275,8 @@ class BdmaTb(object):
         self.dev.functions[0].configure_bar(0, 16*1024*1024)
         self.dev.functions[0].configure_bar(1, 16*1024)
 
-        self.rc.make_port().connect(self.dev)
+        self.root_port = self.rc.make_port()
+        self.root_port.connect(self.dev)
 
     async def gen_reset(self):
         await RisingEdge(self.clock)
