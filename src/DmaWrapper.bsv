@@ -170,7 +170,7 @@ module mkDmaController(DmaController);
         end
         tlpSizeDebugPortReg <= tlpSizeCfg;
 
-        // $display($time, "ns SIM INFO @ BLUE-DMAC: PCIe link is up!");
+        $display($time, "ns SIM INFO @ BLUE-DMAC: PCIe link is up!, tlpSizeCfg=", fshow(tlpSizeCfg));
 
     endrule
 
@@ -500,7 +500,7 @@ endinterface
 module mkRawTestDmaController(RawLoopDmaController);
     Reg#(Bit#(32)) sysResetCounterReg <- mkReg(0);
     DmaController dmac       <- mkDmaController;
-    FIFOF#(DataStream) dataFifo <- mkFIFOF;
+    FIFOF#(DataStream) dataFifo <- mkSizedFIFOF(256);
 
     mkConnection(dataFifo, dmac.c2hDataFifoIn[1]);
     // mkConnection(dmac.c2hDataFifoOut[0], dataFifo);
@@ -513,7 +513,7 @@ module mkRawTestDmaController(RawLoopDmaController);
     Reg#(Bit#(32)) lengthReg <- mkReg(0);
     Reg#(Bit#(32)) modeReg <- mkReg(0);
     Reg#(Bit#(32)) batchReadCounterReg[2] <- mkCReg(2, 0);
-    Reg#(Bit#(32)) batchWriteCounterReg[2] <- mkCReg(2, 0);
+    Reg#(Bit#(16)) batchWriteCounterReg[2] <- mkCReg(2, 0);
 
 
     // rule debug;
@@ -524,13 +524,16 @@ module mkRawTestDmaController(RawLoopDmaController);
     rule forwardData;
         dataFifo.enq(dmac.c2hDataFifoOut[0].first);
         dmac.c2hDataFifoOut[0].deq;
-        $display($time, "ns SIM INFO @ mkRawTestDmaController: forwardData data=", fshow(dmac.c2hDataFifoOut[0].first));
+        if (dmac.c2hDataFifoOut[0].first.isLast) begin
+            batchWriteCounterReg[0] <= batchWriteCounterReg[0] + 1;
+        end
+        // $display($time, "ns SIM INFO @ mkRawTestDmaController: forwardData data=", fshow(dmac.c2hDataFifoOut[0].first));
     endrule
 
     rule handleCsrAccess;
         let req = dmac.h2cReqFifoOut.first;
         dmac.h2cReqFifoOut.deq;
-        $display($time, "ns SIM INFO @ mkRawTestDmaController: handleCsrAccess req=", fshow(req));
+        // $display($time, "ns SIM INFO @ mkRawTestDmaController: handleCsrAccess req=", fshow(req));
         if (req.isWrite) begin
             case (req.addr)
                 'h0004: begin
@@ -550,7 +553,6 @@ module mkRawTestDmaController(RawLoopDmaController);
                 end
                 'h0018: begin
                     batchReadCounterReg[1] <= unpack(pack(req.value));
-                    batchWriteCounterReg[1] <= unpack(pack(req.value));
                 end
             endcase
         end
@@ -580,7 +582,7 @@ module mkRawTestDmaController(RawLoopDmaController);
                 end
 
             endcase
-            dmac.innerRespFifoIn.enq(resp);
+            dmac.h2cRespFifoIn.enq(resp);
         end
     endrule
 
@@ -594,25 +596,25 @@ module mkRawTestDmaController(RawLoopDmaController);
             length: unpack(lengthReg),
             isWrite: False
         });
-        $display($time, "ns SIM INFO @ mkRawTestDmaController: batchRequest batchReadCounterReg=", fshow(batchReadCounterReg[0]));
+        // $display($time, "ns SIM INFO @ mkRawTestDmaController: batchRequest batchReadCounterReg=", fshow(batchReadCounterReg[0]));
     endrule
 
-    rule batchWriteRequest if (batchWriteCounterReg[0] != 0);
-        batchWriteCounterReg[0] <= batchWriteCounterReg[0] - 1;
+    rule batchWriteRequest if (batchWriteCounterReg[1] != 0);
+        batchWriteCounterReg[1] <= batchWriteCounterReg[1] - 1;
         dmac.c2hReqFifoIn[1].enq(DmaRequest{
             startAddr:unpack({dstAddrHighReg, dstAddrLowReg}),
             length: unpack(lengthReg),
             isWrite: True
         });
 
-        $display($time, "ns SIM INFO @ mkRawTestDmaController: batchRequest batchWriteCounterReg=", fshow(batchWriteCounterReg[0]));
+        // $display($time, "ns SIM INFO @ mkRawTestDmaController: batchRequest batchWriteCounterReg=", fshow(batchWriteCounterReg[1]));
 
     endrule
 
-    rule logRead;
-        let stream = dmac.c2hDataFifoOut[0].first;
-        $display($time, "ns SIM INFO @ mkRawTestDmaController: recv stream, isFirst %d, isLast %d, data %h", pack(stream.isFirst), pack(stream.isLast), stream.data);
-    endrule
+    // rule logRead;
+    //     // let stream = dmac.c2hDataFifoOut[0].first;
+    //     // $display($time, "ns SIM INFO @ mkRawTestDmaController: recv stream, isFirst %d, isLast %d, data %h", pack(stream.isFirst), pack(stream.isLast), stream.data);
+    // endrule
 
 
     

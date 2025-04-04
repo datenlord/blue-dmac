@@ -3,6 +3,7 @@ import GetPut::*;
 import Vector::*;
 import Connectable::*;
 import ClientServer::*;
+import Probe :: *;
 
 import SemiFifo::*;
 import BdmaPrimUtils::*;
@@ -13,6 +14,7 @@ import PcieAxiStreamTypes::*;
 import PcieDescriptorTypes::*;
 import DmaUtils::*;
 import CompletionFifo::*;
+
 
 // Wrapper between original dma pipe and blue-rdma style interface
 interface BdmaC2HPipe;
@@ -53,8 +55,8 @@ module mkBdmaC2HPipe#(DmaPathNo pathIdx)(BdmaC2HPipe);
             length   : req.len,
             isWrite  : True
         });
-        $display($time, "ns SIM INFO @ mkBdmaC2HPipe%d: recv new request, startAddr:%d length:%d isWrite:%b",
-                pathIdx, req.addr, req.len, 1);
+        // $display($time, "ns SIM INFO @ mkBdmaC2HPipe%d: recv new request, startAddr:%d length:%d isWrite:%b",
+        //         pathIdx, req.addr, req.len, 1);
     endrule
 
     rule forwardWrResp if (isInitDoneReg);
@@ -71,8 +73,8 @@ module mkBdmaC2HPipe#(DmaPathNo pathIdx)(BdmaC2HPipe);
             length   : req.len,
             isWrite  : False
         });
-        $display($time, "ns SIM INFO @ mkBdmaC2HPipe%d: recv new request, startAddr:%d length:%d isWrite:%b",
-                pathIdx, req.addr, req.len, 0);
+        // $display($time, "ns SIM INFO @ mkBdmaC2HPipe%d: recv new request, startAddr:%d length:%d isWrite:%b",
+        //         pathIdx, req.addr, req.len, 0);
     endrule
 
     rule forwardRdResp if (isInitDoneReg);
@@ -174,8 +176,8 @@ module mkDmaC2HPipe#(DmaPathNo pathIdx)(DmaC2HPipe);
         else begin
             readCore.rdReqFifoIn.enq(req);
         end
-        $display($time, "ns SIM INFO @ mkDmaC2HPipe%d: recv new request, startAddr:%d length:%d isWrite:%b",
-                pathIdx, req.startAddr, req.length,  pack(req.isWrite));
+        // $display($time, "ns SIM INFO @ mkDmaC2HPipe%d: recv new request, startAddr:%d length:%d isWrite:%b",
+        //         pathIdx, req.startAddr, req.length,  pack(req.isWrite));
     endrule
 
 
@@ -249,9 +251,9 @@ module mkC2HReadCore#(DmaPathNo pathIdx)(C2HReadCore);
 
     StreamPipe     descRemove     <- mkStreamHeaderRemove(fromInteger(valueOf(TDiv#(DES_RC_DESCRIPTOR_WIDTH, BYTE_WIDTH)))); 
     StreamPipe     dwRemove       <- mkStreamRemoveFromDW;
-    StreamPipe     reshapeStrad   <- mkStreamReshape;
-    StreamPipe     reshapeRcb     <- mkStreamReshape;
-    StreamPipe     reshapeMrrs    <- mkStreamReshape;
+    StreamPipe     reshapeStrad   <- mkStreamReshape(pathIdx == 0);
+    StreamPipe     reshapeRcb     <- mkStreamReshape(False);
+    StreamPipe     reshapeMrrs    <- mkStreamReshape(False);
     ChunkCompute   chunkSplitor   <- mkChunkComputer(DMA_RX);
     CompletionFifo#(SLOT_PER_PATH, MAX_STREAM_NUM_PER_COMPLETION, DataStream)  cBuffer <- mkCompletionFifo;
     RqDescriptorGenerator rqDescGenerator <- mkRqDescriptorGenerator(False);
@@ -264,13 +266,47 @@ module mkC2HReadCore#(DmaPathNo pathIdx)(C2HReadCore);
     mkConnection(reshapeStrad.streamFifoOut, descRemove.streamFifoIn);
     mkConnection(descRemove.streamFifoOut, dwRemove.streamFifoIn);
     mkConnection(chunkSplitor.reqCntFifoOut, inflightFifo);
+    Reg#(Bit#(8)) rcbBlockCntDebugReg <- mkReg(0);
+    Probe#(Bit#(8)) rcbBlockCntDebugRegProbe <- mkProbe;
 
+    // rule debug if (pathIdx == 0);
+    //     if (!reshapeStrad.streamFifoIn.notFull) begin
+    //         $display("time=%0t, FULL QUEUE mkC2HReadCore reshapeStrad.streamFifoIn", $time);
+    //     end
+    //     if (!tagFifo.notFull) begin
+    //         $display("time=%0t, FULL QUEUE mkC2HReadCore tagFifo", $time);
+    //     end
+    //     if (!completedFifo.notFull) begin
+    //         $display("time=%0t, FULL QUEUE mkC2HReadCore completedFifo", $time);
+    //     end
+
+    //     if (!tlpInFifo.notFull) begin
+    //         $display("time=%0t, FULL QUEUE mkC2HReadCore tlpInFifo", $time);
+    //     end
+
+    //     if (!descRemove.streamFifoIn.notFull) begin
+    //         $display("time=%0t, FULL QUEUE mkC2HReadCore descRemove.streamFifoIn", $time);
+    //     end
+
+    //     if (!dwRemove.streamFifoIn.notFull) begin
+    //         $display("time=%0t, FULL QUEUE mkC2HReadCore dwRemove.streamFifoIn", $time);
+    //     end
+
+    //     if (!tlpInFifo.notEmpty) begin
+    //         $display("time=%0t, EMPTY QUEUE mkC2HReadCore tlpInFifo", $time);
+    //     end
+
+
+
+    // endrule
+    Probe#(ErrorCode) errorCodeProbe <- mkProbe;
     // Pipeline stage 1: convert StraddleStream to DataStream, may cost 2 cycle for one StraddleStream
     rule convertStraddleToDataStream;
         let sdStream = tlpInFifo.first;
         let stream   = getEmptyStream;
         SlotToken tag = 0;
         Bool isCompleted = False;
+        
         if (sdStream.isDoubleFrame) begin
             PcieTlpCtlIsSopPtr isSopPtr = 0;
             if (hasReadOnceReg) begin
@@ -307,10 +343,11 @@ module mkC2HReadCore#(DmaPathNo pathIdx)(C2HReadCore);
         if (stream.isFirst) begin
             PcieRequesterCompleteDescriptor desc = unpack(truncate(stream.data));
             isStreamValid = (desc.errorcode == 0);
+            errorCodeProbe <= desc.errorcode;
         end 
         if (isStreamValid) begin
             reshapeStrad.streamFifoIn.enq(stream);
-            $display("time=%0t, parse from straddle, tag: %d, cmpl status: %d", $time, tag, pack(isCompleted), fshow(stream));
+            // $display("time=%0t, parse from straddle, tag: %d, cmpl status: %d", $time, tag, pack(isCompleted), fshow(stream));
             if (stream.isFirst) begin
                 tagFifo.enq(tag);
                 completedFifo.enq(isCompleted);
@@ -350,16 +387,21 @@ module mkC2HReadCore#(DmaPathNo pathIdx)(C2HReadCore);
         let tag = tagFifo.first;
         let rcvdFlag = True;
         dwRemove.streamFifoOut.deq;
-        $display($time, "ns SIM INFO @ mkDmaC2HReadCore%d: from dwRemove to cBuf, tag: %d, cmpl: %d", pathIdx, tag, pack(isCompleted), fshow(stream));
+        // $display($time, "ns SIM INFO @ mkDmaC2HReadCore%d: from dwRemove to cBuf, tag: %d, cmpl: %d", pathIdx, tag, pack(isCompleted), fshow(stream));
         if (stream.isLast) begin
             completedFifo.deq;
             tagFifo.deq;
+            rcbBlockCntDebugReg <= 0;
         end
+        else begin 
+            rcbBlockCntDebugReg <= rcbBlockCntDebugReg + 1;
+        end
+        rcbBlockCntDebugRegProbe <= rcbBlockCntDebugReg;
         stream.isLast = isCompleted && stream.isLast;   //Re-define the stream boundary
         stream.isFirst = stream.isFirst && (!chunkFlagRegs[tag]);
         cBuffer.append.enq(tuple3(unpack(truncate(pack(tag))), stream, stream.isLast));
         if (stream.isLast) begin
-            $display($time, "ns SIM INFO @ mkDmaC2HReadCore%d: a chunk is completed in cBuffer, tag: %d", pathIdx, tag);
+            // $display($time, "ns SIM INFO @ mkDmaC2HReadCore%d: a chunk is completed in cBuffer, tag: %d", pathIdx, tag);
             rcvdFlag = False;
         end
         chunkFlagRegs[tag] <= rcvdFlag;
@@ -394,11 +436,11 @@ module mkC2HReadCore#(DmaPathNo pathIdx)(C2HReadCore);
         end
         stream.isFirst = stream.isFirst && (rcvReqCntReg == 1);
         reshapeMrrs.streamFifoIn.enq(stream);
-        $display(
-            "time=%0t", $time, ", mkC2HReadCore reshapeMRRS", 
-            ", pathIdx=", fshow(pathIdx),
-            ", stream=", fshow(stream)
-        );
+        // $display(
+        //     "time=%0t", $time, ", mkC2HReadCore reshapeMRRS", 
+        //     ", pathIdx=", fshow(pathIdx),
+        //     ", stream=", fshow(stream)
+        // );
     endrule
 
     // Pipeline stage 1: split to req to MRRS chunks

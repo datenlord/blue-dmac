@@ -234,9 +234,9 @@ typedef TAdd#(1, TLog#(PCIE_STRADDLE_NUM)) PCIE_STRADDLE_WIDTH;
 typedef Bit#(PCIE_STRADDLE_WIDTH) StraddleNo;
 
 // Reorder types
-typedef TSub#(DES_TAG_WIDTH, 1) SLOT_TOKEN_WIDTH;
+typedef TSub#(DES_NONEXTENDED_TAG_WIDTH, 1) SLOT_TOKEN_WIDTH;
 typedef Bit#(SLOT_TOKEN_WIDTH) SlotToken;
-typedef 32 SLOT_PER_PATH;
+typedef 64 SLOT_PER_PATH;
 typedef TAdd#(1, TDiv#(MAX_TLP_SIZE, BYTE_EN_WIDTH)) MAX_STREAM_NUM_PER_COMPLETION;
 
 // Internal Registers 

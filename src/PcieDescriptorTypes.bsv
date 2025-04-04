@@ -15,6 +15,7 @@ typedef 6  DES_BAR_APERTURE_WIDTH;
 typedef 3  DES_BAR_ID_WIDTH;
 typedef 8  DES_TARGET_FUNCTION_WIDTH;
 typedef 8  DES_TAG_WIDTH;
+typedef 8  DES_NONEXTENDED_TAG_WIDTH;
 typedef 16 DES_BDF_WIDTH;
 typedef 4  DES_REQ_TYPE_WIDTH;
 typedef 11 DES_DWORD_COUNT_WIDTH;
@@ -33,7 +34,7 @@ typedef Bit#(DES_DWORD_COUNT_WIDTH)     DwordCount;
 typedef Bit#(DES_ADDR_WIDTH)            Address;
 typedef Bit#(DES_ADDR_TYPE_WIDTH)       AddrType;
 
-typedef 3'b001 ATTR_NO_SNOOP;
+typedef 3'b000 ATTR_NO_SNOOP;
 
 // 16bytes Completer Request Descriptor Format for Memory, I/O, and Atomic Options
 typedef struct {

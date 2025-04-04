@@ -1,6 +1,7 @@
 import FIFOF::*;
 import GetPut :: *;
 import Vector::*;
+import Probe :: *;
 
 import SemiFifo::*;
 import PcieTypes::*;
@@ -217,6 +218,7 @@ module mkConvertDataStreamsToStraddleAxis(ConvertDataStreamsToStraddleAxis);
     Reg#(ArbitHandle) cacheReg <- mkReg(getEmptyArbitHandle);
     Wire#(ArbitHandle) way0Wire <- mkDWire(getEmptyArbitHandle);
     Wire#(ArbitHandle) way1Wire <- mkDWire(getEmptyArbitHandle);
+    Probe#(Bit#(4)) txStraddleProbe <- mkProbe;
 
     function Tuple2#(DataStream, DataStream) conductStraddle(DataStream first, DataStream second);
         let sum = first;
@@ -564,6 +566,8 @@ module mkConvertDataStreamsToStraddleAxis(ConvertDataStreamsToStraddleAxis);
                 dataBFifo.deq;
             end
             arbitFifo.enq(resultHdl);
+
+            txStraddleProbe <= zeroExtend({pack(way1dq), pack(way0dq)});
             // $display($time, "ns SIM INFO @ arbit sim: input: cache.valid:%d way0.valid:%d, way1.valid:%d", cacheReg.valid, way0Wire.valid, way1Wire.valid);
             // $display($time, "ns SIM INFO @ arbit sim: result: id:%d, isSd:%d, subId:%d, data %h", resultHdl.id, resultHdl.isSd, resultHdl.subId, resultHdl.stream.data);
             // if (writebackHdl.valid) $display($time, "ns SIM INFO @ arbit sim: wb: id:%d, isSd:%d, subId:%d, data %h", writebackHdl.id, writebackHdl.isSd, writebackHdl.subId, writebackHdl.stream.data);
@@ -615,9 +619,9 @@ module mkConvertDataStreamsToStraddleAxis(ConvertDataStreamsToStraddleAxis);
                 tUser  : pack(sideBand)
             };
         axiStreamOutFifo.enq(axiStream);
-        $display($time, "ns SIM INFO @ mkDataStreamToAxis: tx a AXIS frame, isSop:%d, isSopPtr:%d/%d, isEop:%d, isEopPtr:%d/%d, BE0:%b/%b, BE1:%b/%b, tData:%h", 
-            sideBand.isSop.isSop, sideBand.isSop.isSopPtrs[0], sideBand.isSop.isSopPtrs[1], sideBand.isEop.isEop, sideBand.isEop.isEopPtrs[0], sideBand.isEop.isEopPtrs[1], 
-            tpl_1(sideBandBE0), tpl_2(sideBandBE0), tpl_1(sideBandBE1), tpl_2(sideBandBE1), axiStream.tData);
+        // $display($time, "ns SIM INFO @ mkDataStreamToAxis: tx a AXIS frame, isSop:%d, isSopPtr:%d/%d, isEop:%d, isEopPtr:%d/%d, BE0:%b/%b, BE1:%b/%b, tData:%h", 
+        //     sideBand.isSop.isSop, sideBand.isSop.isSopPtrs[0], sideBand.isSop.isSopPtrs[1], sideBand.isEop.isEop, sideBand.isEop.isEopPtrs[0], sideBand.isEop.isEopPtrs[1], 
+        //     tpl_1(sideBandBE0), tpl_2(sideBandBE0), tpl_1(sideBandBE1), tpl_2(sideBandBE1), axiStream.tData);
     endrule 
 
     Vector#(DMA_PATH_NUM, FifoIn#(DataStream))     dataFifoInIfc   = newVector;
@@ -866,8 +870,8 @@ module mkOldConvertDataStreamsToStraddleAxis(ConvertDataStreamsToStraddleAxis);
                 tUser  : pack(sideBand)
             };
             axiStreamOutFifo.enq(axiStream);
-            $display($time, "ns SIM INFO @ mkDataStreamToAxis: tx a AXIS frame, isSop:%d, isSopPtr:%d/%d, isEop:%d, isEopPtr:%d/%d, BE0:%b/%b, BE1:%b/%b, tData:%h", 
-                isSop.isSop, isSop.isSopPtrs[0], isSop.isSopPtrs[1], isEop.isEop, isEop.isEopPtrs[0], isEop.isEopPtrs[1], tpl_1(sideBandByteEn0), tpl_2(sideBandByteEn0), tpl_1(sideBandByteEn1), tpl_2(sideBandByteEn1), axiStream.tData);
+            // $display($time, "ns SIM INFO @ mkDataStreamToAxis: tx a AXIS frame, isSop:%d, isSopPtr:%d/%d, isEop:%d, isEopPtr:%d/%d, BE0:%b/%b, BE1:%b/%b, tData:%h", 
+            //     isSop.isSop, isSop.isSopPtrs[0], isSop.isSopPtrs[1], isEop.isEop, isEop.isEopPtrs[0], isEop.isEopPtrs[1], tpl_1(sideBandByteEn0), tpl_2(sideBandByteEn0), tpl_1(sideBandByteEn1), tpl_2(sideBandByteEn1), axiStream.tData);
             if (isEop.isEop >= fromInteger(valueOf(SINGLE_TLP_IN_THIS_BEAT)) && isEop.isEopPtrs[0] == 0) begin
                 $display($time, "ns SIM Warning @ mkDataStreamToAxis: sendingstream byteEn %b", sendingStream.byteEn);
             end
@@ -894,7 +898,7 @@ interface ConvertStraddleAxisToDataStream;
 endinterface
 
 module mkConvertStraddleAxisToDataStream(ConvertStraddleAxisToDataStream);
-    FIFOF#(ReqCmplAxiStream) axiStreamInFifo <- mkFIFOF;
+    FIFOF#(ReqCmplAxiStream) axiStreamInFifo <- mkSizedFIFOF(16);  // it seems that if we dessert AXI's ready signal, the IP core will also deassert it's valid signal some beat later
     Vector#(DMA_PATH_NUM, FIFOF#(StraddleStream)) outFifos <- replicateM(mkFIFOF);
 
     // During TLP varibles
@@ -913,12 +917,14 @@ module mkConvertStraddleAxisToDataStream(ConvertStraddleAxisToDataStream);
     
     function Bool isMyValidTlp(DmaPathNo path, PcieRequesterCompleteDescriptor desc);
         Bool valid = (desc.status == fromInteger(valueOf(SUCCESSFUL_CMPL))) && (!desc.isPoisoned);
-        Bool pathMatch = (truncate(path) == desc.tag[valueOf(DES_TAG_WIDTH) - 1]);
+        Bool pathMatch = (truncate(path) == desc.tag[valueOf(DES_NONEXTENDED_TAG_WIDTH) - 1]);
         return valid && pathMatch;
     endfunction
     
     Reg#(Bool) recvDelayReg <- mkReg(False);
     Reg#(Bit#(32)) recvDelayCounterReg <- mkReg(0);
+
+    Vector#(2, Probe#(Bit#(4))) rxStraddleProbeVec <- replicateM(mkProbe);
     rule flip;
         recvDelayCounterReg <= recvDelayCounterReg + 1;
         if (recvDelayCounterReg > 3000) begin
@@ -928,10 +934,13 @@ module mkConvertStraddleAxisToDataStream(ConvertStraddleAxisToDataStream);
 
     // rule debug;
     //     if (!outFifos[0].notFull) begin
-    //         $display("time=%0t, outFifos[0] FULL");
+    //         $display("time=%0t, outFifos[0] FULL", $time);
     //     end
     //     if (!outFifos[1].notFull) begin
-    //         $display("time=%0t, outFifos[1] FULL");
+    //         $display("time=%0t, outFifos[1] FULL", $time);
+    //     end
+    //     if (!axiStreamInFifo.notFull) begin
+    //         $display("time=%0t, axiStreamInFifo FULL", $time);
     //     end
     // endrule
 
@@ -941,7 +950,7 @@ module mkConvertStraddleAxisToDataStream(ConvertStraddleAxisToDataStream);
         PcieRequesterCompleteSideBandFrame sideBand = unpack(axiStream.tUser);
         let isEop = sideBand.isEop;
         let isSop = sideBand.isSop;
-        $display($time, "ns SIM INFO @ mkAxisToDataStream: rx a AXIS frame, isSop:%h, isEop:%d, tData:%h", isSop.isSop, isEop.isEop, axiStream.tData);
+        // $display($time, "ns SIM INFO @ mkAxisToDataStream: rx a AXIS frame, isSop:%h, isEop:%d, tData:%h", isSop.isSop, isEop.isEop, axiStream.tData);
         for (DmaPathNo pathIdx = 0; pathIdx < fromInteger(valueOf(DMA_PATH_NUM)); pathIdx = pathIdx + 1) begin
             let sdStream = getEmptyStraddleStream;
             // 2 New TLP
@@ -964,7 +973,8 @@ module mkConvertStraddleAxisToDataStream(ConvertStraddleAxisToDataStream);
                     tagReg[pathIdx] <= sdStream.tag[1];
                     isInTlpRegs[pathIdx] <= !sdStream.isLast[1];
                     isCompleted[pathIdx] <= desc1.isRequestCompleted;
-                    $display($time, "ns SIM INFO @ mkAxisToDataStream case 0: outputStraddleStream [%d], sdStream=", pathIdx, fshow(sdStream), ", sideBand=", fshow(sideBand));
+                    // $display($time, "ns SIM INFO @ mkAxisToDataStream case 0: outputStraddleStream [%d], sdStream=", pathIdx, fshow(sdStream), ", sideBand=", fshow(sideBand));
+                    rxStraddleProbeVec[pathIdx] <= 1;
                 end
                 // 1 belongs to this path
                 else if (isMyValidTlp(pathIdx, desc1)) begin
@@ -980,7 +990,8 @@ module mkConvertStraddleAxisToDataStream(ConvertStraddleAxisToDataStream);
                     tagReg[pathIdx] <= sdStream.tag[0];
                     isInTlpRegs[pathIdx] <= !sdStream.isLast[0];
                     isCompleted[pathIdx] <= desc1.isRequestCompleted;
-                    $display($time, "ns SIM INFO @ mkAxisToDataStream case 1: outputStraddleStream [%d], sdStream=", pathIdx, fshow(sdStream), ", sideBand=", fshow(sideBand));
+                    // $display($time, "ns SIM INFO @ mkAxisToDataStream case 1: outputStraddleStream [%d], sdStream=", pathIdx, fshow(sdStream), ", sideBand=", fshow(sideBand));
+                    rxStraddleProbeVec[pathIdx] <= 2;
                 end
                 // 0 belongs to this path
                 else if (isMyValidTlp(pathIdx, desc0)) begin
@@ -996,7 +1007,8 @@ module mkConvertStraddleAxisToDataStream(ConvertStraddleAxisToDataStream);
                     tagReg[pathIdx] <= sdStream.tag[0];
                     isInTlpRegs[pathIdx] <= False;
                     isCompleted[pathIdx] <= False;
-                    $display($time, "ns SIM INFO @ mkAxisToDataStream case 2: outputStraddleStream [%d], sdStream=", pathIdx, fshow(sdStream), ", sideBand=", fshow(sideBand));
+                    // $display($time, "ns SIM INFO @ mkAxisToDataStream case 2: outputStraddleStream [%d], sdStream=", pathIdx, fshow(sdStream), ", sideBand=", fshow(sideBand));
+                    rxStraddleProbeVec[pathIdx] <= 3;
                 end
             end
             // Only 1 New Tlp
@@ -1017,7 +1029,8 @@ module mkConvertStraddleAxisToDataStream(ConvertStraddleAxisToDataStream);
                         tagReg[pathIdx] <= sdStream.tag[0];
                         isInTlpRegs[pathIdx] <= !sdStream.isLast[0];
                         isCompleted[pathIdx] <= desc.isRequestCompleted;
-                        $display($time, "ns SIM INFO @ mkAxisToDataStream case 3: outputStraddleStream [%d], sdStream=", pathIdx, fshow(sdStream), ", sideBand=", fshow(sideBand));
+                        // $display($time, "ns SIM INFO @ mkAxisToDataStream case 3: outputStraddleStream [%d], sdStream=", pathIdx, fshow(sdStream), ", sideBand=", fshow(sideBand));
+                        rxStraddleProbeVec[pathIdx] <= 4;
                     end
                 end
                 // The new Tlp starts in Lane32
@@ -1038,7 +1051,8 @@ module mkConvertStraddleAxisToDataStream(ConvertStraddleAxisToDataStream);
                         tagReg[pathIdx] <= sdStream.tag[1];
                         isInTlpRegs[pathIdx] <= !sdStream.isLast[1];
                         isCompleted[pathIdx] <= desc.isRequestCompleted;
-                        $display($time, "ns SIM INFO @ mkAxisToDataStream case 4: outputStraddleStream [%d], sdStream=", pathIdx, fshow(sdStream), ", sideBand=", fshow(sideBand));
+                        // $display($time, "ns SIM INFO @ mkAxisToDataStream case 4: outputStraddleStream [%d], sdStream=", pathIdx, fshow(sdStream), ", sideBand=", fshow(sideBand));
+                        rxStraddleProbeVec[pathIdx] <= 5;
                     end
                     else if (isMyValidTlp(pathIdx, desc)) begin
                         sdStream.data = getStraddleData(isSopPtr, axiStream.tData);
@@ -1052,7 +1066,8 @@ module mkConvertStraddleAxisToDataStream(ConvertStraddleAxisToDataStream);
                         tagReg[pathIdx] <= sdStream.tag[0];
                         isInTlpRegs[pathIdx] <= !sdStream.isLast[0];
                         isCompleted[pathIdx] <= desc.isRequestCompleted;
-                        $display($time, "ns SIM INFO @ mkAxisToDataStream case 5: outputStraddleStream [%d], sdStream=", pathIdx, fshow(sdStream), ", sideBand=", fshow(sideBand));
+                        // $display($time, "ns SIM INFO @ mkAxisToDataStream case 5: outputStraddleStream [%d], sdStream=", pathIdx, fshow(sdStream), ", sideBand=", fshow(sideBand));
+                        rxStraddleProbeVec[pathIdx] <= 6;
                     end
                     else if (isInTlpRegs[pathIdx]) begin
                         sdStream.data = getStraddleData(0, axiStream.tData);
@@ -1066,7 +1081,8 @@ module mkConvertStraddleAxisToDataStream(ConvertStraddleAxisToDataStream);
                         tagReg[pathIdx] <= sdStream.tag[0];
                         isInTlpRegs[pathIdx] <= False;
                         isCompleted[pathIdx] <= False;
-                        $display($time, "ns SIM INFO @ mkAxisToDataStream case 6: outputStraddleStream [%d], sdStream=", pathIdx, fshow(sdStream), ", sideBand=", fshow(sideBand));
+                        // $display($time, "ns SIM INFO @ mkAxisToDataStream case 6: outputStraddleStream [%d], sdStream=", pathIdx, fshow(sdStream), ", sideBand=", fshow(sideBand));
+                        rxStraddleProbeVec[pathIdx] <= 7;
                     end
                 end
             end
@@ -1083,7 +1099,8 @@ module mkConvertStraddleAxisToDataStream(ConvertStraddleAxisToDataStream);
                     outFifos[pathIdx].enq(sdStream);
                     tagReg[pathIdx] <= sdStream.tag[0];
                     isInTlpRegs[pathIdx] <= !sdStream.isLast[0];
-                    $display($time, "ns SIM INFO @ mkAxisToDataStream case 7: outputStraddleStream [%d], sdStream=", pathIdx, fshow(sdStream), ", sideBand=", fshow(sideBand));
+                    // $display($time, "ns SIM INFO @ mkAxisToDataStream case 7: outputStraddleStream [%d], sdStream=", pathIdx, fshow(sdStream), ", sideBand=", fshow(sideBand));
+                    rxStraddleProbeVec[pathIdx] <= 8;
                 end
             end
 

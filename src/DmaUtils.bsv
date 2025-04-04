@@ -1,6 +1,7 @@
 import FIFOF::*;
 import GetPut :: *;
 import Vector::*;
+import Probe :: *;
 
 import SemiFifo::*;
 import PcieTypes::*;
@@ -14,7 +15,7 @@ typedef TAdd#(1, TLog#(TDiv#(BUS_BOUNDARY, BYTE_EN_WIDTH))) DATA_BEATS_WIDTH;
 typedef Bit#(DATA_BEATS_WIDTH)                              DataBeats;                 
 
 function Tag convertSlotTokenToTag(SlotToken token, DmaPathNo pathIdx);
-    Tag tag = zeroExtend(token) | (zeroExtend(pathIdx) << (valueOf(DES_TAG_WIDTH)-1));
+    Tag tag = zeroExtend(token) | (zeroExtend(pathIdx) << (valueOf(DES_NONEXTENDED_TAG_WIDTH)-1));
     return tag;
 endfunction
 
@@ -338,12 +339,19 @@ module mkRqDescriptorGenerator#(Bool isWrite)(RqDescriptorGenerator);
     FIFOF#(DataStream)       descOutFifo <- mkFIFOF;
     FIFOF#(SideBandByteEn)   byteEnOutFifo <- mkFIFOF;
 
+    Probe#(DwordCount) tlpDwCountProbe <- mkProbe;
+    Probe#(DmaMemAddr) tlpStartAddrCountProbe <- mkProbe;
+    Probe#(DmaMemAddr) tlpEndAddrCountProbe <- mkProbe;
     rule genRqDesc;
         let exReq = exReqInFifo.first;
         exReqInFifo.deq;
         let endOffset = byteModDWord(exReq.endAddr); 
         DwordCount dwCnt = truncate((exReq.endAddr >> valueOf(BYTE_DWORD_SHIFT_WIDTH)) - (exReq.startAddr >> valueOf(BYTE_DWORD_SHIFT_WIDTH))) + 1;
         dwCnt = (exReq.length == 0) ? 1 : dwCnt;
+        tlpDwCountProbe <= dwCnt;
+        tlpStartAddrCountProbe <= exReq.startAddr;
+        tlpEndAddrCountProbe <= exReq.endAddr;
+
         DataBytePtr bytePtr = fromInteger(valueOf(TDiv#(DES_RQ_DESCRIPTOR_WIDTH, BYTE_WIDTH)));
         let descriptor  = PcieRequesterRequestDescriptor {
                 forceECRC       : False,
@@ -376,7 +384,7 @@ module mkRqDescriptorGenerator#(Bool isWrite)(RqDescriptorGenerator);
             lastByteEn = 0;
         end
         byteEnOutFifo.enq(tuple2(firstByteEn, lastByteEn));
-        // $display($time, "ns SIM INFO @ mkRqDescriptorGenerator: generate desc, tag %d, dwcnt %d, start:%d, end:%d, byteCnt:%d ", exReq.tag, dwCnt, exReq.startAddr, exReq.endAddr, exReq.length);
+        $display($time, "ns SIM INFO @ mkRqDescriptorGenerator: generate desc, tag %d, dwcnt %d, start:%d, end:%d, byteCnt:%d ", exReq.tag, dwCnt, exReq.startAddr, exReq.endAddr, exReq.length);
     endrule
 
     interface exReqFifoIn = convertFifoToFifoIn(exReqInFifo);

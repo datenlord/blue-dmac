@@ -200,11 +200,11 @@ module mkCompletionFifo(CompletionFifo#(nSlot, nChunk, tChunk))
         chunkStorage.portA.request.put(bramReqForChunk);
         curOutputSlotMetaReg <= nextBeatMeat;
 
-        $display(
-            "time=%0t", $time, "mkCompletionFifo handleFinalOutput",
-            ", meta=", fshow(meta),
-            ", curOutputSlotMetaReg=", fshow(curOutputSlotMetaReg)
-        );
+        // $display(
+        //     "time=%0t", $time, "mkCompletionFifo handleFinalOutput",
+        //     ", meta=", fshow(meta),
+        //     ", curOutputSlotMetaReg=", fshow(curOutputSlotMetaReg)
+        // );
     endrule
 
     rule forwardFinalOutput;
@@ -221,10 +221,10 @@ module mkCompletionFifo(CompletionFifo#(nSlot, nChunk, tChunk))
         method ActionValue#(SlotNum#(nSlot)) get();
             let slotId <- cpltFlagBuffer.reserve;
             counter.up;
-            $display(
-                "time=%0t", $time, "mkCompletionFifo reserve",
-                ", slotId=", fshow(slotId)
-            );
+            // $display(
+            //     "time=%0t", $time, "mkCompletionFifo reserve",
+            //     ", slotId=", fshow(slotId)
+            // );
 
             return slotId;
         endmethod

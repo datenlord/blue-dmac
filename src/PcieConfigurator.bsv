@@ -40,12 +40,23 @@ module mkPcieConfigurator(PcieConfigurator);
     Reg#(PcieCfgVFFlrFuncNum)   cfgVFFlrFuncNumReg1 <- mkReg(0);
     Reg#(Bool)                  cfgVFFlrDoneReg1    <- mkReg(False);
     Reg#(Bit#(PCIE_CFG_VF_FLR_INPROC_EXTEND_WIDTH)) cfgVfFlrInprocReg0 <- mkReg(0);
+    Reg#(PcieCfgFlowControlSel) flowControlSelReg <- mkReg(0);
     
     rule functionLevelRst;
         cfgVFFlrFuncNumReg  <= cfgVFFlrFuncNumReg + 1;
         cfgFlrDoneReg1      <= cfgFlrDoneReg0;
         cfgVFFlrDoneReg1    <= unpack(cfgVfFlrInprocReg0[cfgVFFlrFuncNumReg]);
         cfgVFFlrFuncNumReg1 <= cfgVFFlrFuncNumReg;
+    endrule
+
+    rule updateFlowControlSelReg;
+        case (flowControlSelReg)
+            0: flowControlSelReg <= 2;
+            2: flowControlSelReg <= 4;
+            4: flowControlSelReg <= 5;
+            5: flowControlSelReg <= 6;
+            6: flowControlSelReg <= 0;
+        endcase
     endrule
 
     method Action initCfg;
@@ -340,7 +351,7 @@ module mkPcieConfigurator(PcieConfigurator);
             endmethod
 
             method PcieCfgFlowControlSel flowControlSel;
-                return 0;
+                return flowControlSelReg;
             endmethod
         endinterface
 

@@ -12,6 +12,7 @@ import PcieDescriptorTypes::*;
 import PcieAdapter::*;
 import DmaTypes::*;
 import SimpleModeUtils::*;
+import Probe :: *;
 
 typedef 1 IDEA_CQ_CSR_DWORD_CNT;
 typedef 1 IDEA_CC_CSR_DWORD_CNT;
@@ -143,7 +144,7 @@ module mkDmaH2CPipe(DmaH2CPipe);
         if (!isInPacket) begin
             let descriptor  = getDescriptorFromFirstBeat(stream);
             if (descriptor.dwordCnt == fromInteger(valueOf(IDEA_CQ_CSR_DWORD_CNT))) begin
-                // $display($time, "ns SIM INFO @ mkDmaH2CPipe: recv CQ, address: %h\n", descriptor.address);
+                $display($time, "ns SIM INFO @ mkDmaH2CPipe: recv CQ, address: %h\n", descriptor.address, fshow(descriptor));
                 case (descriptor.reqType) 
                     fromInteger(valueOf(MEM_WRITE_REQ)): begin
                         let firstData = getDataFromFirstBeat(stream);
@@ -184,6 +185,7 @@ module mkDmaH2CPipe(DmaH2CPipe);
             end
             else begin
                 $display($time, "ns SIM INFO @ mkDmaH2CPipe: Invalid req with Addr %d, dwCnt %d", getBarAddrFromCqDescriptor(descriptor), descriptor.dwordCnt);
+                $finish(1);
                 illegalPcieReqCntReg <= illegalPcieReqCntReg + 1;
             end
         end
@@ -204,12 +206,13 @@ module mkDmaH2CPipe(DmaH2CPipe);
         let value = resp.value;
         let {req, cqDescriptor} = pendingFifo.first;
 
-        // if (addr == req.addr || addr == 0) begin
-        //     $display($time, "ns SIM INFO @ mkDmaH2CPipe: Valid rdResp with Addr %d, value %d", req.addr, value);
-        // end
-        // else begin
-        //     $display($time, "ns SIM ERROR @ mkDmaH2CPipe: InValid rdResp with Addr %d, value %d and Expect Addr %d", addr, value, req.addr);
-        // end
+        if (addr == req.addr || addr == 0) begin
+            $display($time, "ns SIM INFO @ mkDmaH2CPipe: Valid rdResp with Addr %d, value %d", req.addr, value);
+        end
+        else begin
+            $display($time, "ns SIM ERROR @ mkDmaH2CPipe: InValid rdResp with Addr %d, value %d and Expect Addr %d", addr, value, req.addr);
+            $finish(1);
+        end
 
         pendingFifo.deq;
         let ccDescriptor = PcieCompleterCompleteDescriptor {

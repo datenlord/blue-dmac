@@ -534,8 +534,88 @@ module mkStreamHeaderRemove#(DataBytePtr headerLen)(StreamPipe);
     interface streamFifoOut = convertFifoToFifoOut(outFifo);
 endmodule
 
+
+// // Only support one not full dataStream between streams
+// module mkStreamReshape#(Bool debugEn)(StreamPipe);
+//     FIFOF#(DataStream) inFifo  <- mkFIFOF;
+//     FIFOF#(DataStream) outFifo <- mkFIFOF;
+
+//     //During Stream Varibles
+//     Reg#(DataBytePtr) rmBytePtrReg     <- mkReg(0);
+//     Reg#(DataBitPtr)  rmBitPtrReg      <- mkReg(0);
+//     Reg#(DataBytePtr) rsBytePtrReg     <- mkReg(0);
+//     Reg#(DataBitPtr)  rsBitPtrReg      <- mkReg(0);
+//     Reg#(Bool)        isDetectedReg    <- mkReg(False);
+//     Reg#(DataStream)  remainStreamReg  <- mkReg(getEmptyStream);
+//     Reg#(Bool)        hasLastRemainReg <- mkReg(False);
+
+//     rule shape;
+//         if (hasLastRemainReg) begin
+//             outFifo.enq(remainStreamReg);
+//             if (debugEn) $display("mkStreamReshape state 0 outStream=", fshow(remainStreamReg));
+//             isDetectedReg <= False;
+//             hasLastRemainReg <= False;
+//         end
+//         else begin
+//             let stream = inFifo.first;
+//             inFifo.deq;
+//             Bool isDetect = !stream.isLast && !isByteEnFull(stream.byteEn) && (!isDetectedReg);
+//             if (isDetect) begin
+//                 let bytePtr = convertByteEn2BytePtr(stream.byteEn);
+//                 DataBitPtr bitPtr = zeroExtend(bytePtr) << valueOf(BYTE_WIDTH_WIDTH);
+//                 rmBytePtrReg <= bytePtr;
+//                 rmBitPtrReg  <= bitPtr;
+//                 rsBytePtrReg <= getMaxBytePtr - bytePtr;
+//                 rsBitPtrReg  <= getMaxBitPtr - bitPtr;
+//                 remainStreamReg <= stream;
+//                 isDetectedReg <= True;
+//                 if (bytePtr == 0) begin
+//                     $display($time, "ns SIM Warning @ mkStreamReshape: detect bubble, bytePtr:%d, byteEn: %b", bytePtr, stream.byteEn);
+//                 end
+//             end
+//             else begin
+//                 if (isDetectedReg) begin
+//                     let remainStream = DataStream {
+//                         data    : stream.data >> rsBitPtrReg,
+//                         byteEn  : stream.byteEn >> rsBytePtrReg,
+//                         isFirst : stream.isFirst,
+//                         isLast  : True
+//                     };
+//                     remainStreamReg <= remainStream;
+//                     let isLast = isByteEnZero(remainStream.byteEn) && stream.isLast;
+//                     let outStream = DataStream {
+//                         data    : (stream.data << rmBitPtrReg) | remainStreamReg.data,
+//                         byteEn  : (stream.byteEn << rmBytePtrReg) | remainStreamReg.byteEn,
+//                         isFirst : remainStreamReg.isFirst,
+//                         isLast  : isLast
+//                     };
+//                     outFifo.enq(outStream);
+//                     if (debugEn) $display("mkStreamReshape state 1 outStream=", fshow(outStream));
+//                     hasLastRemainReg <= !isByteEnZero(remainStream.byteEn) && stream.isLast;
+//                     isDetectedReg <= isLast ? False : isDetectedReg;
+//                 end
+//                 else begin
+//                     outFifo.enq(stream);
+//                     if (debugEn) $display("mkStreamReshape state 2 outStream=", fshow(stream));
+//                 end
+//             end
+//         end
+//     endrule
+
+//     interface streamFifoIn  = convertFifoToFifoIn(inFifo);
+//     interface streamFifoOut = convertFifoToFifoOut(outFifo);
+// endmodule
+
+
+typedef enum {
+    StreamReshapeStateIdle = 0,
+    StreamReshapeStateOutput = 1,
+    StreamReshapeStateOutputLast = 2,
+    StreamReshapeStateOutputNoShift = 3
+} StreamReshapeState deriving(Bits, FShow, Eq);
+
 // Only support one not full dataStream between streams
-module mkStreamReshape(StreamPipe);
+module mkStreamReshape#(Bool debugEn)(StreamPipe);
     FIFOF#(DataStream) inFifo  <- mkFIFOF;
     FIFOF#(DataStream) outFifo <- mkFIFOF;
 
@@ -544,20 +624,74 @@ module mkStreamReshape(StreamPipe);
     Reg#(DataBitPtr)  rmBitPtrReg      <- mkReg(0);
     Reg#(DataBytePtr) rsBytePtrReg     <- mkReg(0);
     Reg#(DataBitPtr)  rsBitPtrReg      <- mkReg(0);
-    Reg#(Bool)        isDetectedReg    <- mkReg(False);
+    // Reg#(Bool)        isDetectedReg    <- mkReg(False);
     Reg#(DataStream)  remainStreamReg  <- mkReg(getEmptyStream);
-    Reg#(Bool)        hasLastRemainReg <- mkReg(False);
+    // Reg#(Bool)        hasLastRemainReg <- mkReg(False);
 
-    rule shape;
-        if (hasLastRemainReg) begin
-            outFifo.enq(remainStreamReg);
-            isDetectedReg <= False;
-            hasLastRemainReg <= False;
+    Reg#(StreamReshapeState) stateReg <- mkReg(StreamReshapeStateIdle);
+
+    rule idleState if (stateReg == StreamReshapeStateIdle);
+        let stream = inFifo.first;
+        inFifo.deq;
+        // if (debugEn) $display("time=%0t", $time, "mkStreamReshape StreamReshapeStateIdle inStream=", fshow(stream));
+        Bool isDetect = !stream.isLast && !isByteEnFull(stream.byteEn);
+        if (isDetect) begin
+            let bytePtr = convertByteEn2BytePtr(stream.byteEn);
+            DataBitPtr bitPtr = zeroExtend(bytePtr) << valueOf(BYTE_WIDTH_WIDTH);
+            rmBytePtrReg <= bytePtr;
+            rmBitPtrReg  <= bitPtr;
+            rsBytePtrReg <= getMaxBytePtr - bytePtr;
+            rsBitPtrReg  <= getMaxBitPtr - bitPtr;
+            remainStreamReg <= stream;
+            stateReg <= StreamReshapeStateOutput;
         end
         else begin
+            stateReg <= StreamReshapeStateOutputNoShift;
+            remainStreamReg <= stream;
+        end
+    endrule
+
+    rule outputState if (stateReg == StreamReshapeStateOutput);
+        let stream = inFifo.first;
+        inFifo.deq;
+        // if (debugEn) $display("time=%0t", $time, "mkStreamReshape outputState inStream=", fshow(stream));
+
+        let remainStream = DataStream {
+            data    : stream.data >> rsBitPtrReg,
+            byteEn  : stream.byteEn >> rsBytePtrReg,
+            isFirst : stream.isFirst,
+            isLast  : True
+        };
+        remainStreamReg <= remainStream;
+        let isLast = isByteEnZero(remainStream.byteEn) && stream.isLast;
+
+        let outStream = DataStream {
+            data    : (stream.data << rmBitPtrReg) | remainStreamReg.data,
+            byteEn  : (stream.byteEn << rmBytePtrReg) | remainStreamReg.byteEn,
+            isFirst : remainStreamReg.isFirst,
+            isLast  : isLast
+        };
+        outFifo.enq(outStream);
+        // if (debugEn) $display("time=%0t", $time, "mkStreamReshape outputState outStream=", fshow(outStream));
+        let hasLastRemain = (!isByteEnZero(remainStream.byteEn)) && stream.isLast;
+        if (stream.isLast) begin
+            if (hasLastRemain) begin
+                stateReg <= StreamReshapeStateOutputLast;
+            end
+            else begin
+                stateReg <= StreamReshapeStateIdle;
+            end
+        end
+    endrule
+
+    rule outputLastState if (stateReg == StreamReshapeStateOutputLast);
+        outFifo.enq(remainStreamReg);
+        // if (debugEn) $display("time=%0t", $time, "mkStreamReshape outputLastState outStream=", fshow(remainStreamReg));
+        if (inFifo.notEmpty) begin
             let stream = inFifo.first;
             inFifo.deq;
-            Bool isDetect = !stream.isLast && !isByteEnFull(stream.byteEn) && (!isDetectedReg);
+            // if (debugEn) $display("time=%0t", $time, "mkStreamReshape outputLastState inStream=", fshow(stream));
+            Bool isDetect = !stream.isLast && !isByteEnFull(stream.byteEn);
             if (isDetect) begin
                 let bytePtr = convertByteEn2BytePtr(stream.byteEn);
                 DataBitPtr bitPtr = zeroExtend(bytePtr) << valueOf(BYTE_WIDTH_WIDTH);
@@ -566,37 +700,55 @@ module mkStreamReshape(StreamPipe);
                 rsBytePtrReg <= getMaxBytePtr - bytePtr;
                 rsBitPtrReg  <= getMaxBitPtr - bitPtr;
                 remainStreamReg <= stream;
-                isDetectedReg <= True;
-                if (bytePtr == 0) begin
-                    $display($time, "ns SIM Warning @ mkStreamReshape: detect bubble, bytePtr:%d, byteEn: %b", bytePtr, stream.byteEn);
+                stateReg <= StreamReshapeStateOutput;
+            end
+            else begin
+                remainStreamReg <= stream;
+                stateReg <= StreamReshapeStateOutputNoShift;
+            end
+        end
+        else begin
+            stateReg <= StreamReshapeStateIdle;
+        end
+    endrule
+
+    rule outputNoShiftState if (stateReg == StreamReshapeStateOutputNoShift);
+        outFifo.enq(remainStreamReg);
+        // if (debugEn) $display("time=%0t", $time, "mkStreamReshape outputNoShiftState outStream=", fshow(remainStreamReg));
+        if (remainStreamReg.isLast) begin
+            if (inFifo.notEmpty) begin
+                let stream = inFifo.first;
+                inFifo.deq;
+                // if (debugEn) $display("time=%0t", $time, "mkStreamReshape outputNoShiftState inStream=", fshow(stream));
+                Bool isDetect = !stream.isLast && !isByteEnFull(stream.byteEn);
+                if (isDetect) begin
+                    let bytePtr = convertByteEn2BytePtr(stream.byteEn);
+                    DataBitPtr bitPtr = zeroExtend(bytePtr) << valueOf(BYTE_WIDTH_WIDTH);
+                    rmBytePtrReg <= bytePtr;
+                    rmBitPtrReg  <= bitPtr;
+                    rsBytePtrReg <= getMaxBytePtr - bytePtr;
+                    rsBitPtrReg  <= getMaxBitPtr - bitPtr;
+                    remainStreamReg <= stream;
+                    stateReg <= StreamReshapeStateOutput;
+                end
+                else begin
+                    remainStreamReg <= stream;
+                    stateReg <= StreamReshapeStateOutputNoShift;
                 end
             end
             else begin
-                if (isDetectedReg) begin
-                    let remainStream = DataStream {
-                        data    : stream.data >> rsBitPtrReg,
-                        byteEn  : stream.byteEn >> rsBytePtrReg,
-                        isFirst : stream.isFirst,
-                        isLast  : True
-                    };
-                    remainStreamReg <= remainStream;
-                    let isLast = isByteEnZero(remainStream.byteEn) && stream.isLast;
-                    let outStream = DataStream {
-                        data    : (stream.data << rmBitPtrReg) | remainStreamReg.data,
-                        byteEn  : (stream.byteEn << rmBytePtrReg) | remainStreamReg.byteEn,
-                        isFirst : remainStreamReg.isFirst,
-                        isLast  : isLast
-                    };
-                    outFifo.enq(outStream);
-                    hasLastRemainReg <= !isByteEnZero(remainStream.byteEn) && stream.isLast;
-                    isDetectedReg <= isLast ? False : isDetectedReg;
-                end
-                else begin
-                    outFifo.enq(stream);
-                end
+                stateReg <= StreamReshapeStateIdle;
             end
         end
+        else begin
+            let stream = inFifo.first;
+            inFifo.deq;
+            // if (debugEn) $display("time=%0t", $time, "mkStreamReshape outputNoShiftState inStream=", fshow(stream));
+            remainStreamReg <= stream;
+        end
+
     endrule
+
 
     interface streamFifoIn  = convertFifoToFifoIn(inFifo);
     interface streamFifoOut = convertFifoToFifoOut(outFifo);
