@@ -744,7 +744,22 @@ module mkStreamReshape#(Bool debugEn)(StreamPipe);
             let stream = inFifo.first;
             inFifo.deq;
             // if (debugEn) $display("time=%0t", $time, "mkStreamReshape outputNoShiftState inStream=", fshow(stream));
-            remainStreamReg <= stream;
+
+            Bool isDetect = !stream.isLast && !isByteEnFull(stream.byteEn);
+            if (isDetect) begin
+                let bytePtr = convertByteEn2BytePtr(stream.byteEn);
+                DataBitPtr bitPtr = zeroExtend(bytePtr) << valueOf(BYTE_WIDTH_WIDTH);
+                rmBytePtrReg <= bytePtr;
+                rmBitPtrReg  <= bitPtr;
+                rsBytePtrReg <= getMaxBytePtr - bytePtr;
+                rsBitPtrReg  <= getMaxBitPtr - bitPtr;
+                remainStreamReg <= stream;
+                stateReg <= StreamReshapeStateOutput;
+            end
+            else begin
+                remainStreamReg <= stream;
+                stateReg <= StreamReshapeStateOutputNoShift;
+            end
         end
 
     endrule
@@ -838,3 +853,14 @@ module mkStreamRemoveFromDW(StreamPipe);
     interface streamFifoIn  = convertFifoToFifoIn(inFifo);
     interface streamFifoOut = convertFifoToFifoOut(outFifo);
 endmodule
+
+
+function DataStream maskDataStreamWithByteEn(DataStream dsIn);
+    Vector#(BYTE_EN_WIDTH, Byte) maskVec= newVector;
+    for (Integer byteIdx = 0; byteIdx < valueOf(BYTE_EN_WIDTH); byteIdx = byteIdx + 1) begin
+        let byteEnForThisByte = dsIn.byteEn[byteIdx];
+        maskVec[byteIdx] = {byteEnForThisByte, byteEnForThisByte, byteEnForThisByte, byteEnForThisByte, byteEnForThisByte, byteEnForThisByte, byteEnForThisByte, byteEnForThisByte};
+    end
+    dsIn.data = dsIn.data & pack(maskVec);
+    return dsIn;
+endfunction

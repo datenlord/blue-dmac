@@ -338,7 +338,9 @@ module mkC2HReadCore#(DmaPathNo pathIdx)(C2HReadCore);
             tag = sdStream.tag[0];
             isCompleted = sdStream.isCompleted[0]; 
         end
-        stream.byteEn = stream.byteEn;
+
+        stream = maskDataStreamWithByteEn(stream);
+
         Bool isStreamValid = isStreamValidReg;
         if (stream.isFirst) begin
             PcieRequesterCompleteDescriptor desc = unpack(truncate(stream.data));
