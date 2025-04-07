@@ -4,6 +4,7 @@ create_ip -name pcie4_uscale_plus -vendor xilinx.com -library ip -version 1.3 \
 set_property -dict [list CONFIG.PL_LINK_CAP_MAX_LINK_SPEED {8.0_GT/s} \
     CONFIG.PL_LINK_CAP_MAX_LINK_WIDTH {X16} \
     CONFIG.AXISTEN_IF_EXT_512_RQ_STRADDLE {true} \
+    CONFIG.AXISTEN_IF_EXT_512_RC_STRADDLE {true} \
     CONFIG.AXISTEN_IF_EXT_512_RC_4TLP_STRADDLE {false} \
     CONFIG.axisten_if_enable_client_tag {true} \
     CONFIG.PF0_DEVICE_ID {903F} \

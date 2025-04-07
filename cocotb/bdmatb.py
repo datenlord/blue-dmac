@@ -67,7 +67,7 @@ class BdmaTb(object):
             rc_straddle=rc_straddle,
             rc_4tlp_straddle=rc_4tlp_straddle,
             pf_count=1,
-            max_payload_size=512,
+            max_payload_size=256,
             enable_client_tag=self.client_tag,
             enable_extended_tag=True,
             enable_parity=False,

@@ -32,7 +32,7 @@ async def loop_write_read_once(pcie_tb, mem):
 
 
 @cocotb.test(timeout_time=10000000, timeout_unit="ns")
-async def bar_test(dut):
+async def throughput_test(dut):
     tb = BdmaLoopTb(dut)
     await tb.gen_reset()
 
@@ -53,7 +53,10 @@ async def bar_test(dut):
 
     print(f"before=================={mem[10:15]}")
 
-    desc_transfer_szie = 2048
+    desc_transfer_szie = 1024
+    stride_size = 1024
+    strise_cnt = 32
+
 
     dev_bar1 = dev.bar_window[1]
     await dev_bar1.write(0x04, (0).to_bytes(4, byteorder='little', signed=False))
@@ -63,6 +66,9 @@ async def bar_test(dut):
     await dev_bar1.write(0x10, (0).to_bytes(4, byteorder='little', signed=False))
 
     await dev_bar1.write(0x14, (desc_transfer_szie).to_bytes(4, byteorder='little', signed=False))
+    await dev_bar1.write(0x1C, (stride_size).to_bytes(4, byteorder='little', signed=False))
+    await dev_bar1.write(0x20, (strise_cnt).to_bytes(4, byteorder='little', signed=False))
+
     await dev_bar1.write(0x18, (0xFFF).to_bytes(4, byteorder='little', signed=False))
 
     calc_time_ns = 5000
@@ -85,6 +91,95 @@ async def bar_test(dut):
             break
 
     print(f"after=================={mem[10:15]}")
+
+
+
+@cocotb.test(timeout_time=10000000, timeout_unit="ns")
+async def correct_test(dut):
+    tb = BdmaLoopTb(dut)
+    await tb.gen_reset()
+
+    await tb.rc.enumerate()
+    dev = tb.rc.find_device(tb.dev.functions[0].pcie_id)
+
+    await dev.enable_device()
+    await dev.set_master()
+
+    tb.root_port.downstream_port.link_delay_steps = 428*1000
+
+    mem = tb.rc.mem_pool.alloc_region(2*1024*1024)
+
+
+    for offset in range(0, 1024*1024, 1):
+        mem[offset] = offset % 256
+        mem[1024*1024 + offset] = 0
+
+    await Timer(5000, "ns")
+
+    print(f"before=================={mem[10:15]}")
+
+
+
+    dev_bar1 = dev.bar_window[1]
+
+    for iter_idx in range(1000):
+
+        req_size = random.randint(1, 4096)
+        stride_size = req_size
+        stride_cnt =  1 # random.randint(1, 8)
+
+        src_offset =  random.randint(0, 1024*512)
+        dst_offset =  src_offset # random.randint(0, 1024*512)
+
+        req_cnt = stride_cnt
+
+        await dev_bar1.write(0x04, (src_offset).to_bytes(4, byteorder='little', signed=False))
+        await dev_bar1.write(0x08, (0).to_bytes(4, byteorder='little', signed=False))
+
+        await dev_bar1.write(0x0C, (1024*1024 + dst_offset).to_bytes(4, byteorder='little', signed=False))
+        await dev_bar1.write(0x10, (0).to_bytes(4, byteorder='little', signed=False))
+
+        await dev_bar1.write(0x14, (req_size).to_bytes(4, byteorder='little', signed=False))
+        await dev_bar1.write(0x1C, (stride_size).to_bytes(4, byteorder='little', signed=False))
+        await dev_bar1.write(0x20, (stride_cnt).to_bytes(4, byteorder='little', signed=False))
+
+        print(f"src_offset = {hex(src_offset)}, dst_offset = {hex(dst_offset)}, req_size={hex(req_size)}, stride_cnt={hex(stride_cnt)}")
+
+        await dev_bar1.write(0x18, (req_cnt).to_bytes(4, byteorder='little', signed=False))
+
+        while True:
+            new_val = int.from_bytes(await dev_bar1.read(0x18, 4), 'little')
+            if new_val == 0:
+                break
+            await Timer(100, "ns")
+        
+        await Timer(5000, "ns")
+
+        total_bytes_copy = req_size * req_cnt
+
+        src_buffer = mem[0:]
+        dst_buffer = mem[1024*1024:]
+
+        for offset in range(0, dst_offset, 1):
+            if dst_buffer[offset] != 0:
+                print(f"should not be modified, dst_buffer[{hex(offset)}]={hex(dst_buffer[offset])}")
+                raise SystemExit
+
+
+        for (s_offset, d_offset) in zip(range(src_offset, src_offset + total_bytes_copy, 1), range(dst_offset, dst_offset + total_bytes_copy, 1)):
+            if dst_buffer[d_offset] != src_buffer[s_offset]:
+                print(f"not match, dst_buffer[{hex(d_offset)}]={hex(dst_buffer[d_offset])}, src_buffer[{hex(s_offset)}]={hex(src_buffer[s_offset])}")
+                raise SystemExit
+            mem[1024*1024 + d_offset] = 0
+
+        for offset in range(dst_offset + total_bytes_copy, 1024 * 1024, 1):
+            if dst_buffer[offset] != 0:
+                print(f"should not be modified, dst_buffer[{hex(offset)}]={hex(dst_buffer[offset])}")
+                raise SystemExit
+            
+        print("pass" + "\n" * 10)
+
+
 
 def test_dma():
     dut = "mkRawTestDmaController"

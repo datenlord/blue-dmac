@@ -79,8 +79,8 @@ module top#(
   (*mark_debug, mark_debug_clock="user_clk" *)wire                                       s_axis_cc_tvalid;
   (*mark_debug, mark_debug_clock="user_clk" *)wire                              [3:0]    s_axis_cc_tready;
 
-  wire                              [3:0]    pcie_tfc_nph_av;
-  wire                              [3:0]    pcie_tfc_npd_av;
+  (*mark_debug, mark_debug_clock="user_clk" *)wire                              [3:0]    pcie_tfc_nph_av;
+  (*mark_debug, mark_debug_clock="user_clk" *)wire                              [3:0]    pcie_tfc_npd_av;
   //----------------------------------------------------------------------------------------------------------------//
   //  Configuration (CFG) Interface                                                                                 //
   //----------------------------------------------------------------------------------------------------------------//
@@ -110,6 +110,8 @@ module top#(
   wire                                       cfg_err_cor_out;
   wire                                       cfg_err_nonfatal_out;
   wire                                       cfg_err_fatal_out;
+  (*mark_debug, mark_debug_clock="user_clk" *)wire                              [4:0]    cfg_local_error_out;
+  (*mark_debug, mark_debug_clock="user_clk" *)wire                                       cfg_local_error_valid;
 
   wire                              [5:0]    cfg_ltssm_state;
   wire                              [3:0]    cfg_rcb_status;
@@ -132,13 +134,13 @@ module top#(
   wire                              [2:0]    cfg_msg_transmit_type;
   wire                             [31:0]    cfg_msg_transmit_data;
   wire                                       cfg_msg_transmit_done;
-  wire                              [7:0]    cfg_fc_ph;
-  wire                             [11:0]    cfg_fc_pd;
-  wire                              [7:0]    cfg_fc_nph;
-  wire                             [11:0]    cfg_fc_npd;
-  wire                              [7:0]    cfg_fc_cplh;
-  wire                             [11:0]    cfg_fc_cpld;
-  wire                              [2:0]    cfg_fc_sel;
+  (*mark_debug, mark_debug_clock="user_clk" *)wire                              [7:0]    cfg_fc_ph;
+  (*mark_debug, mark_debug_clock="user_clk" *)wire                             [11:0]    cfg_fc_pd;
+  (*mark_debug, mark_debug_clock="user_clk" *)wire                              [7:0]    cfg_fc_nph;
+  (*mark_debug, mark_debug_clock="user_clk" *)wire                             [11:0]    cfg_fc_npd;
+  (*mark_debug, mark_debug_clock="user_clk" *)wire                              [7:0]    cfg_fc_cplh;
+  (*mark_debug, mark_debug_clock="user_clk" *)wire                             [11:0]    cfg_fc_cpld;
+  (*mark_debug, mark_debug_clock="user_clk" *)wire                              [2:0]    cfg_fc_sel;
   wire                              [2:0]    cfg_per_func_status_control;
   wire                              [3:0]    cfg_per_function_number;
   wire                                       cfg_per_function_output_request;
@@ -305,8 +307,8 @@ module top#(
     .cfg_err_nonfatal_out                           ( cfg_err_nonfatal_out ),
     .cfg_err_fatal_out                              ( cfg_err_fatal_out ),
 
-    .cfg_local_error_out                            ( ),
-    .cfg_local_error_valid                          ( ),
+    .cfg_local_error_out                            (cfg_local_error_out ),
+    .cfg_local_error_valid                          (cfg_local_error_valid ),
 
     .cfg_ltssm_state                                ( cfg_ltssm_state ),
     .cfg_rx_pm_state                                ( ),
