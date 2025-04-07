@@ -6,6 +6,7 @@ import DReg::*;
 import GetPut::*;
 import BRAMFIFO::*;
 import ClientServer::*;
+import Probe :: *;
 
 import SemiFifo::*;
 import BusConversion::*;
@@ -73,7 +74,7 @@ module mkBdmaControllerBypassWrapper(BdmaControllerBypassWrapper#(sz_csr_addr, s
             configurator.initCfg;
             cfgFlagReg <= True;
             linkUpReg <= True;
-            $display($time, "ns SIM INFO @ BLUE-DMAC: PCIe link is up!");
+            // $display($time, "ns SIM INFO @ BLUE-DMAC: PCIe link is up!");
         end
     endrule
 
@@ -170,7 +171,7 @@ module mkDmaController(DmaController);
         end
         tlpSizeDebugPortReg <= tlpSizeCfg;
 
-        $display($time, "ns SIM INFO @ BLUE-DMAC: PCIe link is up!, tlpSizeCfg=", fshow(tlpSizeCfg));
+        // $display($time, "ns SIM INFO @ BLUE-DMAC: PCIe link is up!, tlpSizeCfg=", fshow(tlpSizeCfg));
 
     endrule
 
@@ -512,8 +513,26 @@ module mkRawTestDmaController(RawLoopDmaController);
     Reg#(Bit#(32)) dstAddrHighReg <- mkReg(0);
     Reg#(Bit#(32)) lengthReg <- mkReg(0);
     Reg#(Bit#(32)) modeReg <- mkReg(0);
+    Reg#(Bit#(32)) strideSizeReg <- mkReg(0);
+    Reg#(Bit#(32)) maxStrideCntReg <- mkReg(0);
+
+    Reg#(Bit#(32)) curReadStrideCntReg[2] <- mkCReg(2, 0);
+    Reg#(Bit#(32)) curWriteStrideCntReg[2] <- mkCReg(2, 0);
+
+    Reg#(Bit#(32)) curSrcLowAddrReg <- mkReg(0);
+    Reg#(Bit#(32)) curDstLowAddrReg <- mkReg(0);
+
     Reg#(Bit#(32)) batchReadCounterReg[2] <- mkCReg(2, 0);
     Reg#(Bit#(16)) batchWriteCounterReg[2] <- mkCReg(2, 0);
+
+    
+
+    Probe#(Bool) readToWriteQueueNotFullProbe <- mkProbe;
+    Probe#(Bool) readToWriteQueueNotEmptyProbe <- mkProbe;
+    Probe#(Bool) dmaReadDescEnqProbe <- mkProbe;
+    Probe#(Bool) dmaWriteDescEnqProbe <- mkProbe;
+
+    Probe#(Bool) writeDescQueueNotEmptyProbe <- mkProbe;
 
 
     // rule debug;
@@ -521,13 +540,19 @@ module mkRawTestDmaController(RawLoopDmaController);
     //     if (!dataFifo.notFull) $display("dataFifo Full");
     // endrule
 
+    rule debug;
+        readToWriteQueueNotFullProbe <= dataFifo.notFull;
+        readToWriteQueueNotEmptyProbe <= dataFifo.notEmpty;
+        writeDescQueueNotEmptyProbe <= dmac.c2hReqFifoIn[1].notFull;
+    endrule
+
     rule forwardData;
         dataFifo.enq(dmac.c2hDataFifoOut[0].first);
         dmac.c2hDataFifoOut[0].deq;
         if (dmac.c2hDataFifoOut[0].first.isLast) begin
             batchWriteCounterReg[0] <= batchWriteCounterReg[0] + 1;
         end
-        // $display($time, "ns SIM INFO @ mkRawTestDmaController: forwardData data=", fshow(dmac.c2hDataFifoOut[0].first));
+        $display($time, "ns SIM INFO @ mkRawTestDmaController: forwardData data=", fshow(dmac.c2hDataFifoOut[0].first));
     endrule
 
     rule handleCsrAccess;
@@ -553,7 +578,16 @@ module mkRawTestDmaController(RawLoopDmaController);
                 end
                 'h0018: begin
                     batchReadCounterReg[1] <= unpack(pack(req.value));
+                    curReadStrideCntReg[1] <= 0;
+                    curWriteStrideCntReg[1] <= 0;
                 end
+                'h001c: begin
+                    strideSizeReg <= unpack(pack(req.value));
+                end
+                'h0020: begin
+                    maxStrideCntReg <= unpack(pack(req.value));
+                end
+                
             endcase
         end
         else begin
@@ -580,6 +614,12 @@ module mkRawTestDmaController(RawLoopDmaController);
                 'h0018: begin
                     resp.value = unpack(pack(batchReadCounterReg[1]));
                 end
+                'h001c: begin
+                    resp.value = unpack(pack(strideSizeReg));
+                end
+                'h0020: begin
+                    resp.value = unpack(pack(maxStrideCntReg));
+                end
 
             endcase
             dmac.h2cRespFifoIn.enq(resp);
@@ -591,22 +631,49 @@ module mkRawTestDmaController(RawLoopDmaController);
 
     rule batchReadRequest if (batchReadCounterReg[0] != 0);
         batchReadCounterReg[0] <= batchReadCounterReg[0] - 1;
+
+        let curSrcLowAddr = curReadStrideCntReg[0] == 0 ? srcAddrLowReg : curSrcLowAddrReg;
+
         dmac.c2hReqFifoIn[0].enq(DmaRequest{
-            startAddr:unpack({srcAddrHighReg, srcAddrLowReg}),
+            startAddr:unpack({srcAddrHighReg, curSrcLowAddr}),
             length: unpack(lengthReg),
             isWrite: False
         });
+
+        if (curReadStrideCntReg[0] + 1 == maxStrideCntReg) begin
+            curReadStrideCntReg[0] <= 0;
+        end
+        else begin
+            curReadStrideCntReg[0] <= curReadStrideCntReg[0] + 1;
+        end
+
+        curSrcLowAddrReg <= curSrcLowAddr + strideSizeReg;
+
         // $display($time, "ns SIM INFO @ mkRawTestDmaController: batchRequest batchReadCounterReg=", fshow(batchReadCounterReg[0]));
+        dmaReadDescEnqProbe <= True;
     endrule
 
     rule batchWriteRequest if (batchWriteCounterReg[1] != 0);
         batchWriteCounterReg[1] <= batchWriteCounterReg[1] - 1;
+
+        let curDstLowAddr = curWriteStrideCntReg[0] == 0 ? dstAddrLowReg : curDstLowAddrReg;
         dmac.c2hReqFifoIn[1].enq(DmaRequest{
-            startAddr:unpack({dstAddrHighReg, dstAddrLowReg}),
+            startAddr:unpack({dstAddrHighReg, curDstLowAddr}),
             length: unpack(lengthReg),
             isWrite: True
         });
 
+
+        if (curWriteStrideCntReg[0] + 1 == maxStrideCntReg) begin
+            curWriteStrideCntReg[0] <= 0;
+        end
+        else begin
+            curWriteStrideCntReg[0] <= curWriteStrideCntReg[0] + 1;
+        end
+
+        curDstLowAddrReg <= curDstLowAddr + strideSizeReg;
+
+        dmaWriteDescEnqProbe <= True;
         // $display($time, "ns SIM INFO @ mkRawTestDmaController: batchRequest batchWriteCounterReg=", fshow(batchWriteCounterReg[1]));
 
     endrule
