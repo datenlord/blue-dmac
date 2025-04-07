@@ -54,7 +54,7 @@ module mkChunkComputer (TRXDirection direction, ChunkCompute ifc);
     function Bool hasBoundary(DmaExtendRequest request);
         let highIdx = request.endAddr >> tlpMaxSizeWidthReg;
         let lowIdx = request.startAddr >> tlpMaxSizeWidthReg;
-        return (highIdx > lowIdx);
+        return (highIdx != lowIdx);
     endfunction
 
     function DmaReqLen getOffset(DmaExtendRequest request);
@@ -69,7 +69,7 @@ module mkChunkComputer (TRXDirection direction, ChunkCompute ifc);
         inputFifo.deq;
         let offset = getOffset(request);
         let firstChunkLen = tlpMaxSizeReg;
-        if (request.length > tlpMaxSizeReg || has4KBoundary(request)) begin
+        if (hasBoundary(request) || has4KBoundary(request)) begin
             firstChunkLen = offset;
         end
         else begin
@@ -195,7 +195,7 @@ module mkChunkSplit(TRXDirection direction, ChunkSplit ifc);
     function Bool hasBoundary(DmaExtendRequest request);
         let highIdx = request.endAddr >> tlpMaxSizeWidthReg;
         let lowIdx = request.startAddr >> tlpMaxSizeWidthReg;
-        return (highIdx > lowIdx);
+        return (highIdx != lowIdx);
     endfunction
 
     function DmaReqLen getOffset(DmaExtendRequest request);
@@ -215,7 +215,7 @@ module mkChunkSplit(TRXDirection direction, ChunkSplit ifc);
             dataInFifo.deq;
             let offset = getOffset(request);
             let firstChunkLen = tlpMaxSizeReg;
-            if (request.length > tlpMaxSizeReg || has4KBoundary(request)) begin
+            if (hasBoundary(request) || has4KBoundary(request)) begin
                 firstChunkLen = offset;
             end
             else begin
