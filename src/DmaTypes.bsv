@@ -69,17 +69,30 @@ typedef 2'b11                                 MaxByteModDword;
 typedef TSub#(BUS_BOUNDARY_WIDTH, DEFAULT_TLP_SIZE_WIDTH) READ_REQ_CNT_WIDTH;
 typedef Bit#(READ_REQ_CNT_WIDTH)              DmaReadReqCnt;
 
+typedef 2 TLP_PH_WIDTH;
+typedef Bit#(TLP_PH_WIDTH) TlpPh;
+
 typedef struct {
-    DmaMemAddr startAddr;
-    DmaReqLen  length;
-    Bool       isWrite;
+    Bool    noSnoop;
+    Bool    relaxedOrder;
+    Bool    idBasedOrdering;
+    Bool    isTlpHintsExist;
+    TlpPh   tlpPh;
+} DmaRequestAttr deriving(Eq, Bits, Bounded, DefaultValue, FShow);
+
+typedef struct {
+    DmaMemAddr      startAddr;
+    DmaReqLen       length;
+    Bool            isWrite;
+    DmaRequestAttr  attr;
 } DmaRequest deriving(Bits, Bounded, Eq);
 
 typedef struct {
-    DmaMemAddr startAddr;
-    DmaMemAddr endAddr;
-    DmaReqLen  length;
-    Tag        tag;
+    DmaMemAddr      startAddr;
+    DmaMemAddr      endAddr;
+    DmaReqLen       length;
+    Tag             tag;
+    DmaRequestAttr  attr;
 } DmaExtendRequest deriving(Bits, Bounded, Eq, FShow);
 
 typedef struct {
@@ -105,14 +118,20 @@ typedef struct {
     Bool isLast;
 } DataStream deriving(Bits, Bounded, Eq);
 
-typedef Tuple2#(
+typedef struct {
+    Bool  th;
+    TlpPh ph;
+} TphInfo deriving(Bits, Bounded, Eq, FShow);
+
+typedef Tuple3#(
     DWordByteEn,
-    DWordByteEn
-) SideBandByteEn;
+    DWordByteEn,
+    TphInfo
+) RqSideBandSignal;
 
 instance FShow#(DmaRequest);
     function Fmt fshow(DmaRequest request);
-        return ($format("<DmaRequest: startAddr=%h, length=%h, isWrite=%b", request.startAddr, request.length, pack(request.isWrite)));
+        return ($format("<DmaRequest: startAddr=%h, length=%h, isWrite=%b", request.startAddr, request.length, pack(request.isWrite), ", attr=", fshow(request.attr)));
     endfunction
 endinstance
 
@@ -236,7 +255,7 @@ typedef Bit#(PCIE_STRADDLE_WIDTH) StraddleNo;
 // Reorder types
 typedef TSub#(DES_NONEXTENDED_TAG_WIDTH, 1) SLOT_TOKEN_WIDTH;
 typedef Bit#(SLOT_TOKEN_WIDTH) SlotToken;
-typedef 64 SLOT_PER_PATH;
+typedef 32 SLOT_PER_PATH;
 typedef TAdd#(1, TDiv#(MAX_TLP_SIZE, BYTE_EN_WIDTH)) MAX_STREAM_NUM_PER_COMPLETION;
 
 // Internal Registers 

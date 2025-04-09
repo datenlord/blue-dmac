@@ -17,116 +17,116 @@ import CompletionFifo::*;
 
 
 // Wrapper between original dma pipe and blue-rdma style interface
-interface BdmaC2HPipe;
-    // User Logic Ifc
-    interface Server#(BdmaUserC2hWrReq, BdmaUserC2hWrResp) writeSrv;
-    interface Server#(BdmaUserC2hRdReq, BdmaUserC2hRdResp) readSrv;
+// interface BdmaC2HPipe;
+//     // User Logic Ifc
+//     interface Server#(BdmaUserC2hWrReq, BdmaUserC2hWrResp) writeSrv;
+//     interface Server#(BdmaUserC2hRdReq, BdmaUserC2hRdResp) readSrv;
 
-    // Pcie Adapter Ifc
-    interface FifoOut#(DataStream)     tlpDataFifoOut;
-    interface FifoOut#(SideBandByteEn) tlpSideBandFifoOut;
-    interface FifoIn#(StraddleStream)  tlpDataFifoIn;
-    // TODO: CSR Ifc
-    interface Put#(TlpSizeCfg)   tlpSizeCfg;
-    // interface Client#(DmaCsrValue, DmaCsrValue) statusReg;
-endinterface
+//     // Pcie Adapter Ifc
+//     interface FifoOut#(DataStream)     tlpDataFifoOut;
+//     interface FifoOut#(RqSideBandSignal) tlpSideBandFifoOut;
+//     interface FifoIn#(StraddleStream)  tlpDataFifoIn;
+//     // TODO: CSR Ifc
+//     interface Put#(TlpSizeCfg)   tlpSizeCfg;
+//     // interface Client#(DmaCsrValue, DmaCsrValue) statusReg;
+// endinterface
 
-module mkBdmaC2HPipe#(DmaPathNo pathIdx)(BdmaC2HPipe);
-    C2HReadCore  readCore  <- mkC2HReadCore(pathIdx);
-    C2HWriteCore writeCore <- mkC2HWriteCore(pathIdx);
+// module mkBdmaC2HPipe#(DmaPathNo pathIdx)(BdmaC2HPipe);
+//     C2HReadCore  readCore  <- mkC2HReadCore(pathIdx);
+//     C2HWriteCore writeCore <- mkC2HWriteCore(pathIdx);
 
-    Reg#(Bool) isInitDoneReg <- mkReg(False);
-    Reg#(Bool) isInWriteCoreOutputReg <- mkReg(False);
+//     Reg#(Bool) isInitDoneReg <- mkReg(False);
+//     Reg#(Bool) isInWriteCoreOutputReg <- mkReg(False);
 
-    FIFOF#(BdmaUserC2hWrReq)  wrReqInFifo   <- mkFIFOF;
-    FIFOF#(BdmaUserC2hWrResp) wrRespOutFifo <- mkFIFOF;
-    FIFOF#(BdmaUserC2hRdReq)  rdReqInFifo   <- mkFIFOF;
-    FIFOF#(BdmaUserC2hRdResp) rdRespOutFifo <- mkFIFOF;
+//     FIFOF#(BdmaUserC2hWrReq)  wrReqInFifo   <- mkFIFOF;
+//     FIFOF#(BdmaUserC2hWrResp) wrRespOutFifo <- mkFIFOF;
+//     FIFOF#(BdmaUserC2hRdReq)  rdReqInFifo   <- mkFIFOF;
+//     FIFOF#(BdmaUserC2hRdResp) rdRespOutFifo <- mkFIFOF;
 
-    FIFOF#(DataStream)     tlpOutFifo      <- mkFIFOF;
-    FIFOF#(SideBandByteEn) tlpSideBandFifo <- mkFIFOF;
+//     FIFOF#(DataStream)     tlpOutFifo      <- mkFIFOF;
+//     FIFOF#(RqSideBandSignal) tlpSideBandFifo <- mkFIFOF;
 
-    rule forwardWrReq if (isInitDoneReg);
-        let req = wrReqInFifo.first;
-        wrReqInFifo.deq;
-        writeCore.dataFifoIn.enq(req.dataStream);
-        writeCore.wrReqFifoIn.enq(DmaRequest {
-            startAddr: req.addr,
-            length   : req.len,
-            isWrite  : True
-        });
-        // $display($time, "ns SIM INFO @ mkBdmaC2HPipe%d: recv new request, startAddr:%d length:%d isWrite:%b",
-        //         pathIdx, req.addr, req.len, 1);
-    endrule
+//     rule forwardWrReq if (isInitDoneReg);
+//         let req = wrReqInFifo.first;
+//         wrReqInFifo.deq;
+//         writeCore.dataFifoIn.enq(req.dataStream);
+//         writeCore.wrReqFifoIn.enq(DmaRequest {
+//             startAddr: req.addr,
+//             length   : req.len,
+//             isWrite  : True
+//         });
+//         // $display($time, "ns SIM INFO @ mkBdmaC2HPipe%d: recv new request, startAddr:%d length:%d isWrite:%b",
+//         //         pathIdx, req.addr, req.len, 1);
+//     endrule
 
-    rule forwardWrResp if (isInitDoneReg);
-        let rv = writeCore.doneFifoOut.first;
-        writeCore.doneFifoOut.deq;
-        wrRespOutFifo.enq(BdmaUserC2hWrResp{ });
-    endrule
+//     rule forwardWrResp if (isInitDoneReg);
+//         let rv = writeCore.doneFifoOut.first;
+//         writeCore.doneFifoOut.deq;
+//         wrRespOutFifo.enq(BdmaUserC2hWrResp{ });
+//     endrule
 
-    rule forwardRdReq if (isInitDoneReg);
-        let req = rdReqInFifo.first;
-        rdReqInFifo.deq;
-        readCore.rdReqFifoIn.enq(DmaRequest {
-            startAddr: req.addr,
-            length   : req.len,
-            isWrite  : False
-        });
-        // $display($time, "ns SIM INFO @ mkBdmaC2HPipe%d: recv new request, startAddr:%d length:%d isWrite:%b",
-        //         pathIdx, req.addr, req.len, 0);
-    endrule
+//     rule forwardRdReq if (isInitDoneReg);
+//         let req = rdReqInFifo.first;
+//         rdReqInFifo.deq;
+//         readCore.rdReqFifoIn.enq(DmaRequest {
+//             startAddr: req.addr,
+//             length   : req.len,
+//             isWrite  : False
+//         });
+//         // $display($time, "ns SIM INFO @ mkBdmaC2HPipe%d: recv new request, startAddr:%d length:%d isWrite:%b",
+//         //         pathIdx, req.addr, req.len, 0);
+//     endrule
 
-    rule forwardRdResp if (isInitDoneReg);
-        let stream = readCore.dataFifoOut.first;
-        readCore.dataFifoOut.deq;
-        rdRespOutFifo.enq(BdmaUserC2hRdResp{
-            dataStream: stream
-        });
-    endrule
+//     rule forwardRdResp if (isInitDoneReg);
+//         let stream = readCore.dataFifoOut.first;
+//         readCore.dataFifoOut.deq;
+//         rdRespOutFifo.enq(BdmaUserC2hRdResp{
+//             dataStream: stream
+//         });
+//     endrule
 
-    rule muxTlpOut;
-        if (isInWriteCoreOutputReg) begin
-            let tlpStream = writeCore.tlpFifoOut.first;
-            tlpOutFifo.enq(tlpStream);
-            writeCore.tlpFifoOut.deq;
-            isInWriteCoreOutputReg <= !tlpStream.isLast;
-        end
-        else begin
-            if (readCore.tlpFifoOut.notEmpty) begin
-                tlpOutFifo.enq(readCore.tlpFifoOut.first);
-                tlpSideBandFifo.enq(readCore.tlpSideBandFifoOut.first);
-                readCore.tlpFifoOut.deq;
-                readCore.tlpSideBandFifoOut.deq;
-            end
-            else begin
-                tlpOutFifo.enq(writeCore.tlpFifoOut.first);
-                tlpSideBandFifo.enq(writeCore.tlpSideBandFifoOut.first);
-                writeCore.tlpFifoOut.deq;
-                writeCore.tlpSideBandFifoOut.deq;
-                isInWriteCoreOutputReg <= !writeCore.tlpFifoOut.first.isLast;
-            end
-        end
-    endrule
+//     rule muxTlpOut;
+//         if (isInWriteCoreOutputReg) begin
+//             let tlpStream = writeCore.tlpFifoOut.first;
+//             tlpOutFifo.enq(tlpStream);
+//             writeCore.tlpFifoOut.deq;
+//             isInWriteCoreOutputReg <= !tlpStream.isLast;
+//         end
+//         else begin
+//             if (readCore.tlpFifoOut.notEmpty) begin
+//                 tlpOutFifo.enq(readCore.tlpFifoOut.first);
+//                 tlpSideBandFifo.enq(readCore.tlpSideBandFifoOut.first);
+//                 readCore.tlpFifoOut.deq;
+//                 readCore.tlpSideBandFifoOut.deq;
+//             end
+//             else begin
+//                 tlpOutFifo.enq(writeCore.tlpFifoOut.first);
+//                 tlpSideBandFifo.enq(writeCore.tlpSideBandFifoOut.first);
+//                 writeCore.tlpFifoOut.deq;
+//                 writeCore.tlpSideBandFifoOut.deq;
+//                 isInWriteCoreOutputReg <= !writeCore.tlpFifoOut.first.isLast;
+//             end
+//         end
+//     endrule
 
-    // User Ifc
-    interface readSrv  = toGPServer(rdReqInFifo, rdRespOutFifo);
-    interface writeSrv = toGPServer(wrReqInFifo, wrRespOutFifo);
+//     // User Ifc
+//     interface readSrv  = toGPServer(rdReqInFifo, rdRespOutFifo);
+//     interface writeSrv = toGPServer(wrReqInFifo, wrRespOutFifo);
     
-    // Pcie Adapter Ifc
-    interface tlpDataFifoOut      = convertFifoToFifoOut(tlpOutFifo);
-    interface tlpSideBandFifoOut  = convertFifoToFifoOut(tlpSideBandFifo);
-    interface tlpDataFifoIn       = readCore.tlpFifoIn;
-    // TODO: CSR Ifc
-    interface Put tlpSizeCfg;
-        method Action put(sizeCfg);
-            writeCore.maxPayloadSize.put(tuple2(sizeCfg.mps, sizeCfg.mpsWidth));
-            readCore.maxReadReqSize.put(tuple2(sizeCfg.mrrs, sizeCfg.mrrsWidth));
-            isInitDoneReg <= True;
-        endmethod
-    endinterface
+//     // Pcie Adapter Ifc
+//     interface tlpDataFifoOut      = convertFifoToFifoOut(tlpOutFifo);
+//     interface tlpSideBandFifoOut  = convertFifoToFifoOut(tlpSideBandFifo);
+//     interface tlpDataFifoIn       = readCore.tlpFifoIn;
+//     // TODO: CSR Ifc
+//     interface Put tlpSizeCfg;
+//         method Action put(sizeCfg);
+//             writeCore.maxPayloadSize.put(tuple2(sizeCfg.mps, sizeCfg.mpsWidth));
+//             readCore.maxReadReqSize.put(tuple2(sizeCfg.mrrs, sizeCfg.mrrsWidth));
+//             isInitDoneReg <= True;
+//         endmethod
+//     endinterface
 
-endmodule
+// endmodule
 
 // TODO : change the PCIe Adapter Ifc to TlpData and TlpHeader, 
 //        move the module which convert TlpHeader to IP descriptor from dma to adapter
@@ -138,7 +138,7 @@ interface DmaC2HPipe;
     interface FifoOut#(Bool)       doneFifoOut;
     // Pcie Adapter Ifc
     interface FifoOut#(DataStream)     tlpDataFifoOut;
-    interface FifoOut#(SideBandByteEn) tlpSideBandFifoOut;
+    interface FifoOut#(RqSideBandSignal) tlpSideBandFifoOut;
     interface FifoIn#(StraddleStream)  tlpDataFifoIn;
     // TODO: CSR Ifc
     interface Put#(TlpSizeCfg)   tlpSizeCfg;
@@ -157,7 +157,7 @@ module mkDmaC2HPipe#(DmaPathNo pathIdx)(DmaC2HPipe);
     FIFOF#(DataStream) dataInFifo   <- mkFIFOF;
     FIFOF#(DmaRequest) reqInFifo    <- mkFIFOF;
     FIFOF#(DataStream) tlpOutFifo   <- mkFIFOF;
-    FIFOF#(SideBandByteEn) tlpSideBandFifo <- mkFIFOF;
+    FIFOF#(RqSideBandSignal) tlpSideBandFifo <- mkFIFOF;
 
     mkConnection(dataInFifo, writeCore.dataFifoIn);
 
@@ -231,7 +231,7 @@ interface C2HReadCore;
     // PCIe IP Ifc, connect to Requester Adapter
     interface FifoIn#(StraddleStream)  tlpFifoIn;
     interface FifoOut#(DataStream)     tlpFifoOut;
-    interface FifoOut#(SideBandByteEn) tlpSideBandFifoOut;
+    interface FifoOut#(RqSideBandSignal) tlpSideBandFifoOut;
 
     interface Put#(Tuple2#(TlpPayloadSize, TlpPayloadSizeWidth)) maxReadReqSize;
 endinterface
@@ -242,7 +242,7 @@ module mkC2HReadCore#(DmaPathNo pathIdx)(C2HReadCore);
     FIFOF#(StraddleStream) tlpInFifo      <- mkFIFOF;
     FIFOF#(DmaRequest)     reqInFifo      <- mkFIFOF;
     FIFOF#(DataStream)     tlpOutFifo     <- mkFIFOF;
-    FIFOF#(SideBandByteEn) tlpByteEnFifo  <- mkFIFOF;
+    FIFOF#(RqSideBandSignal) tlpByteEnFifo  <- mkFIFOF;
 
     FIFOF#(SlotToken)      tagFifo         <- mkSizedFIFOF(valueOf(TAdd#(1, STREAM_HEADER_REMOVE_LATENCY)));      
     FIFOF#(Bool)           completedFifo   <- mkSizedFIFOF(valueOf(TAdd#(1, STREAM_HEADER_REMOVE_LATENCY)));   
@@ -453,7 +453,8 @@ module mkC2HReadCore#(DmaPathNo pathIdx)(C2HReadCore);
             startAddr : req.startAddr,
             endAddr   : req.startAddr + zeroExtend(req.length - 1),
             length    : req.length,
-            tag       : 0
+            tag       : 0,
+            attr      : req.attr
         };
         chunkSplitor.dmaRequestFifoIn.enq(exReq);
 
@@ -472,7 +473,8 @@ module mkC2HReadCore#(DmaPathNo pathIdx)(C2HReadCore);
                 startAddr:  req.startAddr,
                 endAddr  :  req.startAddr + zeroExtend(req.length - 1),
                 length   :  req.length,
-                tag      :  convertSlotTokenToTag(zeroExtend(token), pathIdx)
+                tag      :  convertSlotTokenToTag(zeroExtend(token), pathIdx),
+                attr     : req.attr
             };
         rqDescGenerator.exReqFifoIn.enq(exReq);
         $display($time, "ns SIM INFO @ mkDmaC2HReadCore%d: tx a new read chunk, tag:%d, addr:%d, length:%d", pathIdx, exReq.tag, req.startAddr, req.length);
@@ -481,14 +483,14 @@ module mkC2HReadCore#(DmaPathNo pathIdx)(C2HReadCore);
     // Pipeline stage 3: generate Tlp to PCIe Adapter
     rule tlpGen;
         let stream = rqDescGenerator.descFifoOut.first;
-        let sideBandByteEn = rqDescGenerator.byteEnFifoOut.first;
+        let rqSideBandSignal = rqDescGenerator.byteEnFifoOut.first;
         rqDescGenerator.descFifoOut.deq;
         rqDescGenerator.byteEnFifoOut.deq;
         stream.isFirst = True;
         stream.isLast  = True;
         tlpOutFifo.enq(stream);
-        tlpByteEnFifo.enq(sideBandByteEn);
-        // $display($time, "ns SIM INFO @ mkDmaC2HReadCore%d: output new tlp, BE:%h/%h", pathIdx, tpl_1(sideBandByteEn), tpl_2(sideBandByteEn));
+        tlpByteEnFifo.enq(rqSideBandSignal);
+        // $display($time, "ns SIM INFO @ mkDmaC2HReadCore%d: output new tlp, BE:%h/%h", pathIdx, tpl_1(rqSideBandSignal), tpl_2(rqSideBandSignal));
     endrule
 
 
@@ -508,7 +510,7 @@ module mkC2HReadCore#(DmaPathNo pathIdx)(C2HReadCore);
     endinterface
 endmodule
 
-// Core path of a single stream, from (DataStream, DmaRequest) ==> (DataStream, SideBandByteEn)
+// Core path of a single stream, from (DataStream, DmaRequest) ==> (DataStream, RqSideBandSignal)
 // split to chunks, align to DWord and add descriptor at the first
 interface C2HWriteCore;
     // User Logic Ifc
@@ -517,7 +519,7 @@ interface C2HWriteCore;
     interface FifoOut#(Bool)           doneFifoOut;
     // PCIe IP Ifc
     interface FifoOut#(DataStream)     tlpFifoOut;
-    interface FifoOut#(SideBandByteEn) tlpSideBandFifoOut;
+    interface FifoOut#(RqSideBandSignal) tlpSideBandFifoOut;
     
     interface Put#(Tuple2#(TlpPayloadSize, TlpPayloadSizeWidth)) maxPayloadSize;
 endinterface
@@ -527,7 +529,7 @@ module mkC2HWriteCore#(DmaPathNo pathIdx)(C2HWriteCore);
     FIFOF#(DataStream)     dataInFifo  <- mkFIFOF;
     FIFOF#(DmaRequest)     wrReqInFifo <- mkFIFOF;
     FIFOF#(DataStream)     dataOutFifo <- mkFIFOF;
-    FIFOF#(SideBandByteEn) byteEnOutFifo <- mkFIFOF;
+    FIFOF#(RqSideBandSignal) byteEnOutFifo <- mkFIFOF;
 
     Reg#(SlotToken)  tagReg <- mkReg(0);
 
@@ -554,7 +556,8 @@ module mkC2HWriteCore#(DmaPathNo pathIdx)(C2HWriteCore);
                 startAddr : wrReq.startAddr,
                 endAddr   : wrReq.startAddr + zeroExtend(wrReq.length - 1),
                 length    : wrReq.length,
-                tag       : 0
+                tag       : 0,
+                attr      : wrReq.attr
             };
             chunkSplit.reqFifoIn.enq(exReq);
             dataInFifo.deq;
@@ -579,7 +582,8 @@ module mkC2HWriteCore#(DmaPathNo pathIdx)(C2HWriteCore);
                 startAddr:  chunkReq.startAddr,
                 endAddr  :  chunkReq.startAddr + zeroExtend(chunkReq.length - 1),
                 length   :  chunkReq.length,
-                tag      :  convertSlotTokenToTag(tagReg, pathIdx)
+                tag      :  convertSlotTokenToTag(tagReg, pathIdx),
+                attr     :  chunkReq.attr
             };
             tagReg <= tagReg + 1;
             let startAddrOffset = byteModDWord(exReq.startAddr);
@@ -606,13 +610,13 @@ module mkC2HWriteCore#(DmaPathNo pathIdx)(C2HWriteCore);
         streamAlign.dataFifoOut.deq;
         if (stream.isFirst) begin
             let descStream = rqDescGenerator.descFifoOut.first;
-            let sideBandByteEn = rqDescGenerator.byteEnFifoOut.first;
+            let rqSideBandSignal = rqDescGenerator.byteEnFifoOut.first;
             rqDescGenerator.descFifoOut.deq;
             rqDescGenerator.byteEnFifoOut.deq;
             stream.data = stream.data | descStream.data;
             stream.byteEn = stream.byteEn | descStream.byteEn;
-            byteEnOutFifo.enq(sideBandByteEn);
-            // $display($time, "ns SIM INFO @ mkDmaC2HWriteCore%d: tx a new tlp, BE:%b/%b", pathIdx, tpl_1(sideBandByteEn), tpl_2(sideBandByteEn));
+            byteEnOutFifo.enq(rqSideBandSignal);
+            // $display($time, "ns SIM INFO @ mkDmaC2HWriteCore%d: tx a new tlp, BE:%b/%b", pathIdx, tpl_1(rqSideBandSignal), tpl_2(rqSideBandSignal));
         end
         dataOutFifo.enq(stream);
         // $display($time, "ns SIM INFO @ mkDmaC2HWriteCore%d: tlp stream", pathIdx, fshow(stream));

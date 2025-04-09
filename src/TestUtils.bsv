@@ -82,7 +82,8 @@ module mkTestModule(TestModule);
                     let req = DmaRequest {
                         startAddr : (zeroExtend(pack(iterReg))) + fromInteger(valueOf(TEST_BASE_ADDR)),
                         length    : 128,
-                        isWrite   : True
+                        isWrite   : True,
+                        attr      : defaultValue
                     };
                     dataOutFifo[0].enq(stream);
                     reqOutFifo[0].enq(req);
@@ -98,7 +99,8 @@ module mkTestModule(TestModule);
                 let req = DmaRequest {
                     startAddr : (zeroExtend(pack(iterReg))) + fromInteger(valueOf(TEST_BASE_ADDR)),
                     length    : 128,
-                    isWrite   : False
+                    isWrite   : False,
+                    attr      : defaultValue
                 };
                 reqOutFifo[0].enq(req);
             end

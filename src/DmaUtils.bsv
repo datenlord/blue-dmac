@@ -86,7 +86,8 @@ module mkChunkComputer (TRXDirection direction, ChunkCompute ifc);
                 outputFifo.enq(DmaRequest {
                     startAddr : newChunkPtrReg,
                     length    : totalLenRemainReg,
-                    isWrite   : False
+                    isWrite   : False,
+                    attr      : request.attr
                 });
                 pipeFifo.deq;
                 mrrsFlagFifo.enq(True);  // this mrrs is done
@@ -97,7 +98,8 @@ module mkChunkComputer (TRXDirection direction, ChunkCompute ifc);
                 outputFifo.enq(DmaRequest {
                     startAddr : newChunkPtrReg,
                     length    : tlpMaxSizeReg,
-                    isWrite   : False
+                    isWrite   : False,
+                    attr      : request.attr
                 });
                 mrrsFlagFifo.enq(False); // this mrrs not done
                 newChunkPtrReg <= newChunkPtrReg + zeroExtend(tlpMaxSizeReg);
@@ -111,7 +113,8 @@ module mkChunkComputer (TRXDirection direction, ChunkCompute ifc);
             outputFifo.enq(DmaRequest {
                 startAddr : request.startAddr,
                 length    : firstChunkLen,
-                isWrite   : False
+                isWrite   : False,
+                attr      : request.attr
             }); 
             if (!isSplittingNextCycle) begin 
                 pipeFifo.deq; 
@@ -183,8 +186,9 @@ module mkChunkSplit(TRXDirection direction, ChunkSplit ifc);
     Reg#(Bool)      isInSplitReg <- mkReg(False);
     Reg#(DataBeats) beatsReg     <- mkReg(0);
 
-    Reg#(DmaMemAddr) nextStartAddrReg <- mkReg(0);
-    Reg#(DmaReqLen)  remainLenReg     <- mkReg(0);
+    Reg#(DmaMemAddr)        nextStartAddrReg    <- mkReg(0);
+    Reg#(DmaReqLen)         remainLenReg        <- mkReg(0);
+    Reg#(DmaRequestAttr)    reqAttrReg          <- mkReg(defaultValue);
 
     function Bool has4KBoundary(DmaExtendRequest request);
         let highIdx = request.endAddr >> valueOf(TLog#(BUS_BOUNDARY));
@@ -226,7 +230,8 @@ module mkChunkSplit(TRXDirection direction, ChunkSplit ifc);
             let firstReq = DmaRequest {
                 startAddr : request.startAddr,
                 length    : firstChunkLen,
-                isWrite   : True
+                isWrite   : True,
+                attr      : request.attr
             };
             firstReqPipeFifo.enq(firstReq);
             firstChunkSplitor.inputStreamFifoIn.enq(stream);
@@ -268,6 +273,7 @@ module mkChunkSplit(TRXDirection direction, ChunkSplit ifc);
                 let oriReq = inputReqPipeFifo.first;
                 firstReqPipeFifo.deq;
                 inputReqPipeFifo.deq;
+                reqAttrReg <= oriReq.attr;
                 if (chunkReq.length == oriReq.length) begin
                     nextStartAddr = 0;
                     remainLen     = 0;
@@ -284,7 +290,8 @@ module mkChunkSplit(TRXDirection direction, ChunkSplit ifc);
                 let chunkReq = DmaRequest {
                     startAddr: nextStartAddr,
                     length   : tlpMaxSizeReg,
-                    isWrite  : True
+                    isWrite  : True,
+                    attr      : reqAttrReg
                 };
                 if (!isInSplitReg) begin
                     // Do nothing
@@ -331,13 +338,13 @@ endmodule
 interface RqDescriptorGenerator;
     interface FifoIn#(DmaExtendRequest) exReqFifoIn;
     interface FifoOut#(DataStream)      descFifoOut;
-    interface FifoOut#(SideBandByteEn)  byteEnFifoOut;
+    interface FifoOut#(RqSideBandSignal)  byteEnFifoOut;
 endinterface
 
 module mkRqDescriptorGenerator#(Bool isWrite)(RqDescriptorGenerator);
     FIFOF#(DmaExtendRequest) exReqInFifo <- mkFIFOF;
     FIFOF#(DataStream)       descOutFifo <- mkFIFOF;
-    FIFOF#(SideBandByteEn)   byteEnOutFifo <- mkFIFOF;
+    FIFOF#(RqSideBandSignal)   byteEnOutFifo <- mkFIFOF;
 
     Probe#(DwordCount) tlpDwCountProbe <- mkProbe;
     Probe#(DmaMemAddr) tlpStartAddrCountProbe <- mkProbe;
@@ -355,7 +362,7 @@ module mkRqDescriptorGenerator#(Bool isWrite)(RqDescriptorGenerator);
         DataBytePtr bytePtr = fromInteger(valueOf(TDiv#(DES_RQ_DESCRIPTOR_WIDTH, BYTE_WIDTH)));
         let descriptor  = PcieRequesterRequestDescriptor {
                 forceECRC       : False,
-                attributes      : fromInteger(valueof(ATTR_NO_SNOOP)),
+                attributes      : {pack(exReq.attr.idBasedOrdering), pack(exReq.attr.relaxedOrder), pack(exReq.attr.noSnoop)},
                 trafficClass    : 0,
                 requesterIdEn   : False,
                 completerId     : 0,
@@ -378,12 +385,14 @@ module mkRqDescriptorGenerator#(Bool isWrite)(RqDescriptorGenerator);
         let endAddrOffset = byteModDWord(exReq.endAddr);
         let firstByteEn = convertDWordOffset2FirstByteEn(startAddrOffset);
         let lastByteEn = convertDWordOffset2LastByteEn(endAddrOffset);
-    // if startAddr and endAddr are in the same DWord
+        // if startAddr and endAddr are in the same DWord
         if ((exReq.startAddr >> valueOf(TLog#(DWORD_BYTES))) == (exReq.endAddr >> valueOf(TLog#(DWORD_BYTES)))) begin
             firstByteEn = firstByteEn & lastByteEn;
             lastByteEn = 0;
         end
-        byteEnOutFifo.enq(tuple2(firstByteEn, lastByteEn));
+
+        let tphInfo = TphInfo{th:exReq.attr.isTlpHintsExist, ph:exReq.attr.tlpPh};
+        byteEnOutFifo.enq(tuple3(firstByteEn, lastByteEn, tphInfo));
         $display($time, "ns SIM INFO @ mkRqDescriptorGenerator: generate desc, tag %d, dwcnt %d, start:%d, end:%d, byteCnt:%d ", exReq.tag, dwCnt, exReq.startAddr, exReq.endAddr, exReq.length);
     endrule
 

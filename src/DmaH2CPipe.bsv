@@ -19,68 +19,68 @@ typedef 1 IDEA_CC_CSR_DWORD_CNT;
 typedef 4 IDEA_CC_CSR_BYTE_CNT;
 typedef 4 IDEA_FIRST_BE_HIGH_VALID_PTR_OF_CSR;
 
-// Wrapper between original dma pipe and blue-rdma style interface
-interface BdmaH2CPipe#(numeric type sz_csr_addr, numeric type sz_csr_data);
-    // User Ifc
-    interface Client#(BdmaUserH2cWrReq#(sz_csr_addr, sz_csr_data), BdmaUserH2cWrResp)  writeClt;
-    interface Client#(BdmaUserH2cRdReq#(sz_csr_addr), BdmaUserH2cRdResp#(sz_csr_data)) readClt;
+// // Wrapper between original dma pipe and blue-rdma style interface
+// interface BdmaH2CPipe#(numeric type sz_csr_addr, numeric type sz_csr_data);
+//     // User Ifc
+//     interface Client#(BdmaUserH2cWrReq#(sz_csr_addr, sz_csr_data), BdmaUserH2cWrResp)  writeClt;
+//     interface Client#(BdmaUserH2cRdReq#(sz_csr_addr), BdmaUserH2cRdResp#(sz_csr_data)) readClt;
 
-    // Pcie Adapter Ifc
-    interface FifoIn#(DataStream)  tlpDataFifoIn;
-    interface FifoOut#(DataStream) tlpDataFifoOut;
-endinterface
+//     // Pcie Adapter Ifc
+//     interface FifoIn#(DataStream)  tlpDataFifoIn;
+//     interface FifoOut#(DataStream) tlpDataFifoOut;
+// endinterface
 
-module mkBdmaH2CPipe(BdmaH2CPipe#(sz_csr_addr, sz_csr_data)) 
-    provisos(
-        Add#(_a, sz_csr_addr, DMA_CSR_ADDR_WIDTH), 
-        Add#(_b, sz_csr_data, DMA_CSR_DATA_WIDTH)
-    );
-    DmaH2CPipe pipe <- mkDmaH2CPipe;
-    FIFOF#(BdmaUserH2cWrReq#(sz_csr_addr, sz_csr_data))  wrReqQ  <- mkFIFOF;
-    FIFOF#(BdmaUserH2cWrResp) wrRespQ <- mkFIFOF;
-    FIFOF#(BdmaUserH2cRdReq#(sz_csr_addr))  rdReqQ  <- mkFIFOF;
-    FIFOF#(BdmaUserH2cRdResp#(sz_csr_data)) rdRespQ <- mkFIFOF;
-    let dummyCsr <- mkDummyCsr;
+// module mkBdmaH2CPipe(BdmaH2CPipe#(sz_csr_addr, sz_csr_data)) 
+//     provisos(
+//         Add#(_a, sz_csr_addr, DMA_CSR_ADDR_WIDTH), 
+//         Add#(_b, sz_csr_data, DMA_CSR_DATA_WIDTH)
+//     );
+//     DmaH2CPipe pipe <- mkDmaH2CPipe;
+//     FIFOF#(BdmaUserH2cWrReq#(sz_csr_addr, sz_csr_data))  wrReqQ  <- mkFIFOF;
+//     FIFOF#(BdmaUserH2cWrResp) wrRespQ <- mkFIFOF;
+//     FIFOF#(BdmaUserH2cRdReq#(sz_csr_addr))  rdReqQ  <- mkFIFOF;
+//     FIFOF#(BdmaUserH2cRdResp#(sz_csr_data)) rdRespQ <- mkFIFOF;
+//     let dummyCsr <- mkDummyCsr;
 
-    mkConnection(pipe.csrReqFifoOut, dummyCsr.reqFifoIn);
-    mkConnection(dummyCsr.respFifoOut, pipe.csrRespFifoIn);
+//     mkConnection(pipe.csrReqFifoOut, dummyCsr.reqFifoIn);
+//     mkConnection(dummyCsr.respFifoOut, pipe.csrRespFifoIn);
 
-    rule forwardReq;
-        let h2cReq = pipe.userReqFifoOut.first;
-        pipe.userReqFifoOut.deq;
-        if (h2cReq.isWrite) begin
-            BdmaUserH2cWrReq#(sz_csr_addr, sz_csr_data) wrReq = BdmaUserH2cWrReq {
-                addr: truncate(h2cReq.addr),
-                data: truncate(h2cReq.value)
-            };
-            wrReqQ.enq(wrReq);
-        end
-        else begin
-            BdmaUserH2cRdReq#(sz_csr_addr) rdReq = BdmaUserH2cRdReq {
-                addr: truncate(h2cReq.addr)
-            };
-            rdReqQ.enq(rdReq);
-        end
-    endrule
+//     rule forwardReq;
+//         let h2cReq = pipe.userReqFifoOut.first;
+//         pipe.userReqFifoOut.deq;
+//         if (h2cReq.isWrite) begin
+//             BdmaUserH2cWrReq#(sz_csr_addr, sz_csr_data) wrReq = BdmaUserH2cWrReq {
+//                 addr: truncate(h2cReq.addr),
+//                 data: truncate(h2cReq.value)
+//             };
+//             wrReqQ.enq(wrReq);
+//         end
+//         else begin
+//             BdmaUserH2cRdReq#(sz_csr_addr) rdReq = BdmaUserH2cRdReq {
+//                 addr: truncate(h2cReq.addr)
+//             };
+//             rdReqQ.enq(rdReq);
+//         end
+//     endrule
     
-    rule handleWrResp;
-        wrRespQ.deq;
-    endrule
+//     rule handleWrResp;
+//         wrRespQ.deq;
+//     endrule
 
-    rule handleRdResp;
-        let value = rdRespQ.first.data;
-        rdRespQ.deq;
-        pipe.userRespFifoIn.enq(CsrResponse{
-            addr : 0,
-            value: zeroExtend(value)
-        });
-    endrule
+//     rule handleRdResp;
+//         let value = rdRespQ.first.data;
+//         rdRespQ.deq;
+//         pipe.userRespFifoIn.enq(CsrResponse{
+//             addr : 0,
+//             value: zeroExtend(value)
+//         });
+//     endrule
 
-    interface writeClt = toGPClient(wrReqQ, wrRespQ);
-    interface readClt  = toGPClient(rdReqQ, rdRespQ);
-    interface tlpDataFifoIn  = pipe.tlpDataFifoIn;
-    interface tlpDataFifoOut = pipe.tlpDataFifoOut;
-endmodule
+//     interface writeClt = toGPClient(wrReqQ, wrRespQ);
+//     interface readClt  = toGPClient(rdReqQ, rdRespQ);
+//     interface tlpDataFifoIn  = pipe.tlpDataFifoIn;
+//     interface tlpDataFifoOut = pipe.tlpDataFifoOut;
+// endmodule
 
 
 function CsrResponse getEmptyCsrResponse();

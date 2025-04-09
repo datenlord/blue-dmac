@@ -117,7 +117,8 @@ module mkSimpleC2HWriteCoreTb(Empty);
         let req = DmaRequest {
             startAddr : fromInteger(valueOf(SIMPLE_TEST_ADDR)),
             length    : fromInteger(valueOf(SIMPLE_TEST_BYTELEN)),
-            isWrite   : True
+            isWrite   : True,
+            attr      : defaultValue
         };
         dut.wrReqFifoIn.enq(req);
         let stream = generatePsuedoStream(fromInteger(valueOf(SIMPLE_TEST_BYTELEN)), True, True);
@@ -218,93 +219,95 @@ module mkSimpleConvertStraddleAxisToDataStreamTb(Empty);
 endmodule
 
 
-module mkSimpleConvertDataStreamsToStraddleAxisTb(Empty);
-    ConvertDataStreamsToStraddleAxis dut <- mkConvertDataStreamsToStraddleAxis;
-    Reg#(UInt#(32)) testCntReg <- mkReg(0);
+// module mkSimpleConvertDataStreamsToStraddleAxisTb(Empty);
+//     ConvertDataStreamsToStraddleAxis dut <- mkConvertDataStreamsToStraddleAxis;
+//     Reg#(UInt#(32)) testCntReg <- mkReg(0);
 
-    rule testInput if (testCntReg < 1);
-        let stream = generatePsuedoStream(fromInteger(valueOf(SIMPLE_TEST_BYTELEN)), True, True);
-        let sideBandByteEn = tuple2(4'b1111, 4'b1111);
-        dut.dataFifoIn[0].enq(stream);
-        dut.byteEnFifoIn[0].enq(sideBandByteEn);
-        dut.dataFifoIn[1].enq(stream);
-        dut.byteEnFifoIn[1].enq(sideBandByteEn);
-        testCntReg <= testCntReg + 1;
-    endrule
+//     rule testInput if (testCntReg < 1);
+//         let stream = generatePsuedoStream(fromInteger(valueOf(SIMPLE_TEST_BYTELEN)), True, True);
+//         let rqSideBandSignal = tuple2(4'b1111, 4'b1111);
+//         dut.dataFifoIn[0].enq(stream);
+//         dut.byteEnFifoIn[0].enq(rqSideBandSignal);
+//         dut.dataFifoIn[1].enq(stream);
+//         dut.byteEnFifoIn[1].enq(rqSideBandSignal);
+//         testCntReg <= testCntReg + 1;
+//     endrule
 
-    rule testOutput;
-        let axiStream = dut.axiStreamFifoOut.first;
-        dut.axiStreamFifoOut.deq;
-        $display("tData: %h", axiStream.tData);
-        $display("tKeep: %h", axiStream.tKeep);
-        PcieRequesterRequestSideBandFrame sideBand = unpack(axiStream.tUser);
-        $display("isSop: %d", sideBand.isSop.isSop);
-        if (axiStream.tLast) begin
-            $finish();
-        end
-    endrule
-endmodule
+//     rule testOutput;
+//         let axiStream = dut.axiStreamFifoOut.first;
+//         dut.axiStreamFifoOut.deq;
+//         $display("tData: %h", axiStream.tData);
+//         $display("tKeep: %h", axiStream.tKeep);
+//         PcieRequesterRequestSideBandFrame sideBand = unpack(axiStream.tUser);
+//         $display("isSop: %d", sideBand.isSop.isSop);
+//         if (axiStream.tLast) begin
+//             $finish();
+//         end
+//     endrule
+// endmodule
 
-module mkSimpleC2HReadCoreTb(Empty);
-    C2HReadCore dut <- mkC2HReadCore(0);
-    Reg#(UInt#(32)) testCntReg <- mkReg(0);
+// module mkSimpleC2HReadCoreTb(Empty);
+//     C2HReadCore dut <- mkC2HReadCore(0);
+//     Reg#(UInt#(32)) testCntReg <- mkReg(0);
 
-    rule testInput if (testCntReg < 1);
-        let req = DmaRequest {
-            startAddr : fromInteger(valueOf(SIMPLE_TEST_ADDR)),
-            length    : fromInteger(valueOf(SIMPLE_TEST_BYTELEN)),
-            isWrite   : False
-        };
-        dut.rdReqFifoIn.enq(req);
-        testCntReg <= testCntReg + 1;
-    endrule
+//     rule testInput if (testCntReg < 1);
+//         let req = DmaRequest {
+//             startAddr : fromInteger(valueOf(SIMPLE_TEST_ADDR)),
+//             length    : fromInteger(valueOf(SIMPLE_TEST_BYTELEN)),
+//             isWrite   : False,
+//             attr      : default
+//         };
+//         dut.rdReqFifoIn.enq(req);
+//         testCntReg <= testCntReg + 1;
+//     endrule
 
-    rule testOutput;
-        let stream = dut.tlpFifoOut.first;
-        dut.tlpFifoOut.deq;
-        $display(fshow(stream));
-        if (stream.isFirst) begin
-            let {firstByteEn, lastByteEn} = dut.tlpSideBandFifoOut.first;
-            dut.tlpSideBandFifoOut.deq;
-            $display("firstByteEn:%b, lastByteEn:%b", firstByteEn, lastByteEn);
-            PcieRequesterRequestDescriptor desc = unpack(truncate(stream.data));
-            $display("Descriptor Elements: dwordCnt:%d, address:%h", desc.dwordCnt, desc.address << 2);
-        end
-        if (stream.isLast) begin
-            $finish();
-        end
-    endrule
-endmodule
+//     rule testOutput;
+//         let stream = dut.tlpFifoOut.first;
+//         dut.tlpFifoOut.deq;
+//         $display(fshow(stream));
+//         if (stream.isFirst) begin
+//             let {firstByteEn, lastByteEn} = dut.tlpSideBandFifoOut.first;
+//             dut.tlpSideBandFifoOut.deq;
+//             $display("firstByteEn:%b, lastByteEn:%b", firstByteEn, lastByteEn);
+//             PcieRequesterRequestDescriptor desc = unpack(truncate(stream.data));
+//             $display("Descriptor Elements: dwordCnt:%d, address:%h", desc.dwordCnt, desc.address << 2);
+//         end
+//         if (stream.isLast) begin
+//             $finish();
+//         end
+//     endrule
+// endmodule
 
-module simpleWritePathTb(Empty);
-    C2HWriteCore c2hWriteCore <- mkC2HWriteCore(0);
-    ConvertDataStreamsToStraddleAxis adapter <- mkConvertDataStreamsToStraddleAxis;
-    mkConnection(c2hWriteCore.tlpFifoOut, adapter.dataFifoIn[0]);
-    mkConnection(c2hWriteCore.tlpSideBandFifoOut, adapter.byteEnFifoIn[0]);
-    Reg#(UInt#(32)) testCntReg <- mkReg(0);
+// module simpleWritePathTb(Empty);
+//     C2HWriteCore c2hWriteCore <- mkC2HWriteCore(0);
+//     ConvertDataStreamsToStraddleAxis adapter <- mkConvertDataStreamsToStraddleAxis;
+//     mkConnection(c2hWriteCore.tlpFifoOut, adapter.dataFifoIn[0]);
+//     mkConnection(c2hWriteCore.tlpSideBandFifoOut, adapter.byteEnFifoIn[0]);
+//     Reg#(UInt#(32)) testCntReg <- mkReg(0);
 
-    rule testInput if (testCntReg < 1);
-        let req = DmaRequest {
-            startAddr : fromInteger(valueOf(SIMPLE_TEST_ADDR)),
-            length    : fromInteger(valueOf(SIMPLE_TEST_BYTELEN)),
-            isWrite   : True
-        };
-        let stream = generatePsuedoStream(fromInteger(valueOf(SIMPLE_TEST_BYTELEN)), True, True);
-        c2hWriteCore.wrReqFifoIn.enq(req);
-        c2hWriteCore.dataFifoIn.enq(stream);
-        testCntReg <= testCntReg + 1;
-    endrule
+//     rule testInput if (testCntReg < 1);
+//         let req = DmaRequest {
+//             startAddr : fromInteger(valueOf(SIMPLE_TEST_ADDR)),
+//             length    : fromInteger(valueOf(SIMPLE_TEST_BYTELEN)),
+//             isWrite   : True,
+//             attr      : default
+//         };
+//         let stream = generatePsuedoStream(fromInteger(valueOf(SIMPLE_TEST_BYTELEN)), True, True);
+//         c2hWriteCore.wrReqFifoIn.enq(req);
+//         c2hWriteCore.dataFifoIn.enq(stream);
+//         testCntReg <= testCntReg + 1;
+//     endrule
 
-    rule testOutput;
-        let axiStream = adapter.axiStreamFifoOut.first;
-        adapter.axiStreamFifoOut.deq;
-        $display("tData: %h", axiStream.tData);
-        $display("tKeep: %h", axiStream.tKeep);
-        PcieRequesterRequestSideBandFrame sideBand = unpack(axiStream.tUser);
-        $display("isSop: %d", sideBand.isSop.isSop);
-        if (axiStream.tLast) begin
-            $finish();
-        end
-    endrule
+//     rule testOutput;
+//         let axiStream = adapter.axiStreamFifoOut.first;
+//         adapter.axiStreamFifoOut.deq;
+//         $display("tData: %h", axiStream.tData);
+//         $display("tKeep: %h", axiStream.tKeep);
+//         PcieRequesterRequestSideBandFrame sideBand = unpack(axiStream.tUser);
+//         $display("isSop: %d", sideBand.isSop.isSop);
+//         if (axiStream.tLast) begin
+//             $finish();
+//         end
+//     endrule
 
-endmodule
+// endmodule

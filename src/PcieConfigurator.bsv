@@ -49,15 +49,15 @@ module mkPcieConfigurator(PcieConfigurator);
         cfgVFFlrFuncNumReg1 <= cfgVFFlrFuncNumReg;
     endrule
 
-    rule updateFlowControlSelReg;
-        case (flowControlSelReg)
-            0: flowControlSelReg <= 2;
-            2: flowControlSelReg <= 4;
-            4: flowControlSelReg <= 5;
-            5: flowControlSelReg <= 6;
-            6: flowControlSelReg <= 0;
-        endcase
-    endrule
+    // rule updateFlowControlSelReg;
+    //     case (flowControlSelReg)
+    //         0: flowControlSelReg <= 2;
+    //         2: flowControlSelReg <= 4;
+    //         4: flowControlSelReg <= 5;
+    //         5: flowControlSelReg <= 6;
+    //         6: flowControlSelReg <= 0;
+    //     endcase
+    // endrule
 
     method Action initCfg;
         TlpPayloadSize defaultTlpMaxSize = fromInteger(valueOf(DEFAULT_TLP_SIZE));
