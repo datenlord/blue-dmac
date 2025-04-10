@@ -806,11 +806,15 @@ module mkRawTestDmaController(RawLoopDmaController);
 
     endrule
 
-    FIFOF#(Bit#(32)) writeOnlyPayloadGenReqQueue <- mkSizedFIFOF(32);
-    Reg#(Bit#(32)) writeOnlyPayloadGenCounterReg <- mkReg(0);
-    Reg#(Bool) writeOnlyPayloadGenIsFirstReg <- mkReg(True);
+    FIFOF#(Bit#(32)) writeOnlyPayloadGenReqAQueue <- mkSizedFIFOF(32);
+    Reg#(Bit#(32)) writeOnlyPayloadGenCounterAReg <- mkReg(0);
+    Reg#(Bool) writeOnlyPayloadGenIsFirstAReg <- mkReg(True);
 
-    rule writeOnlyTest if (batchTestCounterAReg[0] != 0 && isWriteOnlyTest);
+    FIFOF#(Bit#(32)) writeOnlyPayloadGenReqBQueue <- mkSizedFIFOF(32);
+    Reg#(Bit#(32)) writeOnlyPayloadGenCounterBReg <- mkReg(0);
+    Reg#(Bool) writeOnlyPayloadGenIsFirstBReg <- mkReg(True);
+
+    rule writeOnlyTestA if (batchTestCounterAReg[0] != 0 && isWriteOnlyTest);
         batchTestCounterAReg[0] <= batchTestCounterAReg[0] - 1;
 
         let curDstLowAddr = curWriteStrideCntAReg[0] == 0 ? dstAddrLowReg : curDstLowAddrAReg;
@@ -821,7 +825,7 @@ module mkRawTestDmaController(RawLoopDmaController);
             attr: unpack(truncate(attrReg))
         });
 
-        writeOnlyPayloadGenReqQueue.enq(lengthReg);
+        writeOnlyPayloadGenReqAQueue.enq(lengthReg);
 
 
         if (curWriteStrideCntAReg[0] + 1 == maxStrideCntReg) begin
@@ -835,11 +839,11 @@ module mkRawTestDmaController(RawLoopDmaController);
     endrule
 
 
-    rule genWriteOnlyStream if (isWriteOnlyTest);
+    rule genWriteOnlyStreamA if (isWriteOnlyTest);
         let ds = ?;
-        if (writeOnlyPayloadGenIsFirstReg) begin
-            let req = writeOnlyPayloadGenReqQueue.first;
-            writeOnlyPayloadGenReqQueue.deq;
+        if (writeOnlyPayloadGenIsFirstAReg) begin
+            let req = writeOnlyPayloadGenReqAQueue.first;
+            writeOnlyPayloadGenReqAQueue.deq;
 
             let isLast = req <= fromInteger(valueOf(BYTE_EN_WIDTH));
             ds = DataStream {
@@ -848,24 +852,85 @@ module mkRawTestDmaController(RawLoopDmaController);
                 isFirst: True,
                 isLast: isLast
             };
-            writeOnlyPayloadGenIsFirstReg <= isLast;
-            writeOnlyPayloadGenCounterReg <= req - fromInteger(valueOf(BYTE_EN_WIDTH));
+            writeOnlyPayloadGenIsFirstAReg <= isLast;
+            writeOnlyPayloadGenCounterAReg <= req - fromInteger(valueOf(BYTE_EN_WIDTH));
         end
         else begin
-            let isLast = writeOnlyPayloadGenCounterReg <= fromInteger(valueOf(BYTE_EN_WIDTH));
+            let isLast = writeOnlyPayloadGenCounterAReg <= fromInteger(valueOf(BYTE_EN_WIDTH));
 
             ds = DataStream {
                 data    : ?,
-                byteEn  : convertBytePtr2ByteEn(isLast ? truncate(writeOnlyPayloadGenCounterReg) : fromInteger(valueOf(BYTE_EN_WIDTH))),
+                byteEn  : convertBytePtr2ByteEn(isLast ? truncate(writeOnlyPayloadGenCounterAReg) : fromInteger(valueOf(BYTE_EN_WIDTH))),
                 isFirst: False,
                 isLast: isLast
             };
-            writeOnlyPayloadGenIsFirstReg <= isLast;
+            writeOnlyPayloadGenIsFirstAReg <= isLast;
 
-            writeOnlyPayloadGenCounterReg <= writeOnlyPayloadGenCounterReg - fromInteger(valueOf(BYTE_EN_WIDTH));
+            writeOnlyPayloadGenCounterAReg <= writeOnlyPayloadGenCounterAReg - fromInteger(valueOf(BYTE_EN_WIDTH));
         end
 
         dataFifoA.enq(ds);
+    endrule
+
+
+
+
+    rule writeOnlyTestB if (batchTestCounterBReg[0] != 0 && isWriteOnlyTest && doubleChannelTestOffsetReg != 0);
+        batchTestCounterBReg[0] <= batchTestCounterBReg[0] - 1;
+
+        let curDstLowAddr = curWriteStrideCntBReg[0] == 0 ? dstAddrLowReg : curDstLowAddrBReg;
+        dmac.c2hReqFifoIn[0].enq(DmaRequest{
+            startAddr:unpack({dstAddrHighReg, curDstLowAddr}),
+            length: unpack(lengthReg),
+            isWrite: True,
+            attr: unpack(truncate(attrReg))
+        });
+
+        writeOnlyPayloadGenReqBQueue.enq(lengthReg);
+
+
+        if (curWriteStrideCntBReg[0] + 1 == maxStrideCntReg) begin
+            curWriteStrideCntBReg[0] <= 0;
+        end
+        else begin
+            curWriteStrideCntBReg[0] <= curWriteStrideCntBReg[0] + 1;
+        end
+
+        curDstLowAddrBReg <= curDstLowAddr + strideSizeReg;
+    endrule
+
+
+    rule genWriteOnlyStreamB if (isWriteOnlyTest && doubleChannelTestOffsetReg != 0);
+        let ds = ?;
+        if (writeOnlyPayloadGenIsFirstBReg) begin
+            let req = writeOnlyPayloadGenReqBQueue.first;
+            writeOnlyPayloadGenReqBQueue.deq;
+
+            let isLast = req <= fromInteger(valueOf(BYTE_EN_WIDTH));
+            ds = DataStream {
+                data    : ?,
+                byteEn  : convertBytePtr2ByteEn(isLast ? truncate(req) : fromInteger(valueOf(BYTE_EN_WIDTH))),
+                isFirst: True,
+                isLast: isLast
+            };
+            writeOnlyPayloadGenIsFirstBReg <= isLast;
+            writeOnlyPayloadGenCounterBReg <= req - fromInteger(valueOf(BYTE_EN_WIDTH));
+        end
+        else begin
+            let isLast = writeOnlyPayloadGenCounterBReg <= fromInteger(valueOf(BYTE_EN_WIDTH));
+
+            ds = DataStream {
+                data    : ?,
+                byteEn  : convertBytePtr2ByteEn(isLast ? truncate(writeOnlyPayloadGenCounterBReg) : fromInteger(valueOf(BYTE_EN_WIDTH))),
+                isFirst: False,
+                isLast: isLast
+            };
+            writeOnlyPayloadGenIsFirstBReg <= isLast;
+
+            writeOnlyPayloadGenCounterBReg <= writeOnlyPayloadGenCounterBReg - fromInteger(valueOf(BYTE_EN_WIDTH));
+        end
+
+        dataFifoB.enq(ds);
     endrule
 
     // rule logRead;

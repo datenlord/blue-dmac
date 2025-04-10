@@ -77,25 +77,28 @@ def test_throughput():
     for offset in range(0, 1024*1024, 4):
         src_buffer[offset:offset + 4] = (offset//4).to_bytes(4, byteorder="little")
         dst_buffer[offset:offset + 4] = (0).to_bytes(4, byteorder="little")
-
-
+    
+    
     src_buffer[:5] = b'Hello'  # 写入数据
     print(src_buffer[:10])       # 读取数据
     dst_buffer[:5] = b'world'  # 写入数据
     print(dst_buffer[:10])
-
+    
     pa_src = va_to_pa(addr) # + 2
-
+    
     pa_dst = va_to_pa(addr + 1024*1024) # + 3
-
+    
     req_size = 4096
-    stride_size = 4096
+    stride_size = 0
     stride_cnt = 32
 
+    double_channel_offset = 1024*512 # double channel test enabled
+    # double_channel_offset = 0 # double channel test disabled
+    
     with open('/sys/bus/pci/devices/0000:02:00.0/resource1', 'r+b') as f:
         # 将文件映射到内存
         with mmap.mmap(f.fileno(), 0) as mm:
-
+    
             struct.pack_into('<I', mm, 0x4, pa_src & 0xFFFFFFFF)
             struct.pack_into('<I', mm, 0x8, pa_src >> 32)
             struct.pack_into('<I', mm, 0xc, pa_dst & 0xFFFFFFFF)
@@ -103,36 +106,52 @@ def test_throughput():
             struct.pack_into('<I', mm, 0x14, req_size)
             struct.pack_into('<I', mm, 0x1c, stride_size)
             struct.pack_into('<I', mm, 0x20, stride_cnt)
+            struct.pack_into('<I', mm, 0x24, 0b000_000)
 
+            struct.pack_into('<I', mm, 0x28, double_channel_offset)  
+
+            # struct.pack_into('<I', mm, 0x2C, 0b00)  # read write test
+            # struct.pack_into('<I', mm, 0x2C, 0b01)  # read only test
+            struct.pack_into('<I', mm, 0x2C, 0b10)  # write only test
+    
             print(hex(struct.unpack_from('<I', mm, offset=0x4)[0]))
             print(hex(struct.unpack_from('<I', mm, offset=0x8)[0]))
             print(hex(struct.unpack_from('<I', mm, offset=0xc)[0]))
             print(hex(struct.unpack_from('<I', mm, offset=0x10)[0]))
             print(hex(struct.unpack_from('<I', mm, offset=0x14)[0]))
-
-
+            
+    
+    
             last_time = time.time()
-            iter_last = 1
-            iter_now = 2
+            iter_last_a = 1
+            iter_now_a = 2
+            iter_last_b = 1
+            iter_now_b = 2
             for _ in range(1):
-                struct.pack_into('<I', mm, 0x18, 0xffffff8)
-                iter_last = struct.unpack_from('<I', mm, offset=0x18)[0]
-                while iter_last != 0:
-
+                struct.pack_into('<I', mm, 0x18, 0x1ffffff)
+                iter_last_a = struct.unpack_from('<I', mm, offset=0x18)[0]
+                iter_last_b = struct.unpack_from('<I', mm, offset=0x30)[0]
+                while iter_last_a != 0 or iter_last_b != 0:
+                
                     time.sleep(1)
-                    iter_now = struct.unpack_from('<I', mm, offset=0x18)[0]
+                    iter_now_a = struct.unpack_from('<I', mm, offset=0x18)[0]
+                    iter_now_b = struct.unpack_from('<I', mm, offset=0x30)[0]
+
                     now_time = time.time()
-
+                
                     time_delta = now_time - last_time
-                    iter_delta = iter_last - iter_now
+                    iter_delta_a = iter_last_a - iter_now_a
+                    iter_delta_b = iter_last_b - iter_now_b
+                    iter_delta = iter_delta_a + iter_delta_b
                     speed = (iter_delta * req_size * 8) / time_delta / 1024 / 1024 / 1024
-
-                    print(f"speed = {speed} Gbps, iter_left={iter_last}")
-                    iter_last = iter_now
+    
+                    print(f"speed = {speed} Gbps, iter_left_a={iter_last_a}, iter_left_b={iter_last_b}")
+                    iter_last_a = iter_now_a
+                    iter_last_b = iter_now_b
                     last_time = now_time
-
+    
     time.sleep(0.1)
-
+    
     print(dst_buffer[:10])
 
 
@@ -141,34 +160,31 @@ def test_correct():
     for offset in range(0, 1024*1024, 1):
         src_buffer[offset] = offset % 256
         dst_buffer[offset] = 0
-
-
-
+    
+    
+    
     pa_src = va_to_pa(addr)
-
+    
     pa_dst = va_to_pa(addr + 1024*1024)
-
-
+    
+    
     with open('/sys/bus/pci/devices/0000:02:00.0/resource1', 'r+b') as f:
         # 将文件映射到内存
         with mmap.mmap(f.fileno(), 0) as mm:
-
-
-
+    
+    
+    
             last_time = time.time()
             iter_last = 1
             iter_now = 2
-            for iter_idx in range(100):
+            for iter_idx in range(10000000):
                 print(f"iter={iter_idx}")
 
-                for offset in range(0, 1024*1024, 1):
-                    src_buffer[offset] = offset % 256
-                    dst_buffer[offset] = 0
-                req_size = random.randint(1, 32)
+                req_size =  random.randint(1, 4096)
                 stride_size = req_size
                 stride_cnt =  random.randint(1, 8)
-
-                src_offset =  random.randint(0, 1024*512)
+                
+                src_offset =  random.randint(0, 1024*128)
                 dst_offset =  src_offset # random.randint(0, 1024*512)
 
                 req_cnt = stride_cnt
@@ -180,53 +196,99 @@ def test_correct():
                 struct.pack_into('<I', mm, 0x14, req_size)
                 struct.pack_into('<I', mm, 0x1c, stride_size)
                 struct.pack_into('<I', mm, 0x20, stride_cnt)
-
-
-                print(hex(struct.unpack_from('<I', mm, offset=0x4)[0]))
-                print(hex(struct.unpack_from('<I', mm, offset=0x8)[0]))
-                print(hex(struct.unpack_from('<I', mm, offset=0xc)[0]))
-                print(hex(struct.unpack_from('<I', mm, offset=0x10)[0]))
-                print(hex(struct.unpack_from('<I', mm, offset=0x14)[0]))
+                # struct.pack_into('<I', mm, 0x24, 0b000)
+    
+                
+                # print(hex(struct.unpack_from('<I', mm, offset=0x4)[0]))
+                # print(hex(struct.unpack_from('<I', mm, offset=0x8)[0]))
+                # print(hex(struct.unpack_from('<I', mm, offset=0xc)[0]))
+                # print(hex(struct.unpack_from('<I', mm, offset=0x10)[0]))
+                # print(hex(struct.unpack_from('<I', mm, offset=0x14)[0]))
 
                 print(f"src_offset = {hex(src_offset)}, dst_offset = {hex(dst_offset)}, req_size={hex(req_size)}, stride_cnt={hex(stride_cnt)}, src_addr={hex(pa_src + src_offset)}, dst_addr={hex(pa_dst + dst_offset)}")
-
-                for offset in range(0, dst_offset, 1):
-                    if dst_buffer[offset] != b'\x00':
-                        print(f"zero check failed, dst_buffer[{hex(offset)})={hex(int.from_bytes(dst_buffer[offset], byteorder='little'))}")
-                        #raise SystemExit
 
 
                 struct.pack_into('<I', mm, 0x18, req_cnt)
                 while iter_last != 0:
                     time.sleep(0.00001)
                     iter_last = struct.unpack_from('<I', mm, offset=0x18)[0]
-
                 #input()
                 #time.sleep(1)
                 total_bytes_copy = req_size * req_cnt
-
-                for offset in range(0, 1024*1024, 1):
-                    src_buffer[offset] = offset % 256
+    
 
                 for offset in range(0, dst_offset, 1):
                     if dst_buffer[offset] != b'\x00':
                         print(f"should not be modified, dst_buffer[{hex(offset)})={hex(int.from_bytes(dst_buffer[offset], byteorder='little'))}")
-                        #raise SystemExit
+                        raise SystemExit
 
-
+                
                 for (s_offset, d_offset) in zip(range(src_offset, src_offset + total_bytes_copy, 1), range(dst_offset, dst_offset + total_bytes_copy, 1)):
                     if dst_buffer[d_offset] != src_buffer[s_offset]:
-                        print(f"not match, dst_buffer[{hex(d_offset)}]={hex(int.from_bytes(dst_buffer[d_offset], byteorder='little'))}, src_buffer[{hex(s_offset)}]={hex(int.from_bytes(src_buffer[s_offset],byteorder='little'))}")
-                        #raise SystemExit
+                        time.sleep(0.001) 
+                        if dst_buffer[d_offset] != src_buffer[s_offset]:
+                            print(f"not match, dst_buffer[{hex(d_offset)}]={hex(int.from_bytes(dst_buffer[d_offset], byteorder='little'))}, src_buffer[{hex(s_offset)}]={hex(int.from_bytes(src_buffer[s_offset],byteorder='little'))}")
+                            raise SystemExit
                     dst_buffer[d_offset] = 0
 
-                for offset in range(dst_offset + total_bytes_copy, 1024 * 1024, 1):
+                for offset in range(dst_offset + total_bytes_copy, 1024 * 256, 1):
                     if dst_buffer[offset] != b'\x00':
                         print(f"should not be modified, dst_buffer[{hex(offset)})={hex(int.from_bytes(dst_buffer[offset], byteorder='little'))}")
                         raise SystemExit
 
 
-#test_correct()
+
+def pcie_p2p():
+
+    for offset in range(0, 1024*1024, 1):
+        src_buffer[offset] = 0
+        dst_buffer[offset] = 0
+
+    # pa_src = va_to_pa(addr)
+    # pa_dst = 0xfb800000
+    # src_offset =  0x00
+    # dst_offset =  0x1048
+    
+
+    pa_src = 0xfb800000
+    pa_dst = va_to_pa(addr + 1024*1024)
+    src_offset =  0x1048
+    dst_offset =  0x00
+
+    with open('/sys/bus/pci/devices/0000:02:00.0/resource1', 'r+b') as f:
+        # 将文件映射到内存
+        with mmap.mmap(f.fileno(), 0) as mm:
+
+            req_size =  4
+            stride_size = 1
+            stride_cnt =  1
+            
+            req_cnt = stride_cnt
+
+            struct.pack_into('<I', mm, 0x4, (pa_src + src_offset) & 0xFFFFFFFF)
+            struct.pack_into('<I', mm, 0x8, pa_src >> 32)
+            struct.pack_into('<I', mm, 0xc, (pa_dst + dst_offset) & 0xFFFFFFFF)
+            struct.pack_into('<I', mm, 0x10, pa_dst >> 32)
+            struct.pack_into('<I', mm, 0x14, req_size)
+            struct.pack_into('<I', mm, 0x1c, stride_size)
+            struct.pack_into('<I', mm, 0x20, stride_cnt)
+
+            print(f"src_offset = {hex(src_offset)}, dst_offset = {hex(dst_offset)}, req_size={hex(req_size)}, stride_cnt={hex(stride_cnt)}, src_addr={hex(pa_src + src_offset)}, dst_addr={hex(pa_dst + dst_offset)}")
+
+            struct.pack_into('<I', mm, 0x18, req_cnt)
+
+            time.sleep(0.01)
+
+            total_bytes_copy = req_size * req_cnt
+
+            print(f'read result =  {hex(int.from_bytes(dst_buffer[0:4],byteorder="little"))}')
+    
+
+# test_correct()
 test_throughput()
+# pcie_p2p()
+
+
 # 释放内存
 libc.munmap(addr, size)
+
