@@ -6,10 +6,10 @@ import LFSR::*;
 import Vector::*;
 
 import SemiFifo::*;
-import CompletionFifo::*;
-import BdmaPrimUtils::*;
-import PcieAxiStreamTypes::*;
-import DmaTypes::*;
+import XilBdmaCompletionFifo::*;
+import XilBdmaPrimUtils::*;
+import XilBdmaPcieAxiStreamTypes::*;
+import XilBdmaDmaTypes::*;
 
 typedef 6 TEST_CHUNK_NUM;
 typedef 16 TEST_SLOT_NUM;

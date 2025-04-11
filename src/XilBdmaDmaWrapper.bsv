@@ -11,17 +11,17 @@ import Probe :: *;
 import SemiFifo::*;
 import BusConversion::*;
 import AxiStreamTypes::*;
-import PcieTypes::*;
-import PcieConfigurator::*;
-import PcieAxiStreamTypes::*;
-import PcieAdapter::*;
-import DmaTypes::*;  
-import DmaUtils::*;
-import DmaC2HPipe::*;
-import DmaH2CPipe::*;
-import SimpleModeUtils::*;
-import TestUtils::*;
-import BdmaPrimUtils :: *;
+import XilBdmaPcieTypes::*;
+import XilBdmaPcieConfigurator::*;
+import XilBdmaPcieAxiStreamTypes::*;
+import XilBdmaPcieAdapter::*;
+import XilBdmaDmaTypes::*;  
+import XilBdmaDmaUtils::*;
+import XilBdmaDmaC2HPipe::*;
+import XilBdmaDmaH2CPipe::*;
+import XilBdmaSimpleModeUtils::*;
+import XilBdmaTestUtils::*;
+import XilBdmaPrimUtils :: *;
 
 // // For Bsv User
 // interface BdmaControllerBypassWrapper#(numeric type sz_csr_addr, numeric type sz_csr_data);

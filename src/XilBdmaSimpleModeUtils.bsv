@@ -5,8 +5,8 @@ import SemiFifo::*;
 import FIFOF::*;
 import BRAM::*;
 
-import DmaTypes::*;
-import StreamUtils::*;
+import XilBdmaDmaTypes::*;
+import XilBdmaStreamUtils::*;
 
 // function Bit#(TMul#(2,n)) doubleExtend(Bit#(n) lo, Bit#(n) hi) provisos(Add#(1, _a, n), Add#(_b, n, TMul#(2, n)));
 //     return zeroExtend(lo) | (zeroExtend(hi) << valueOf(n));

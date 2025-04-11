@@ -4,16 +4,16 @@ import Vector::*;
 import Connectable::*;
 
 import SemiFifo::*;
-import PcieAxiStreamTypes::*;
-import DmaTypes::*;
-import BdmaPrimUtils::*;
-import PcieTypes::*;
-import PcieDescriptorTypes::*;
-import StreamUtils::*;
-import PcieAdapter::*;
+import XilBdmaPcieAxiStreamTypes::*;
+import XilBdmaDmaTypes::*;
+import XilBdmaPrimUtils::*;
+import XilBdmaPcieTypes::*;
+import XilBdmaPcieDescriptorTypes::*;
+import XilBdmaStreamUtils::*;
+import XilBdmaPcieAdapter::*;
 import TestStreamUtils::*;
-import DmaUtils::*;
-import DmaC2HPipe::*;
+import XilBdmaDmaUtils::*;
+import XilBdmaDmaC2HPipe::*;
 
 
 typedef 100000 CHUNK_PER_EPOCH_TEST_NUM;

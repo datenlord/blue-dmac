@@ -4,12 +4,12 @@ import Vector::*;
 import Probe :: *;
 
 import SemiFifo::*;
-import PcieTypes::*;
-import DmaTypes::*;
-import PcieAxiStreamTypes::*;
-import BdmaPrimUtils::*;
-import StreamUtils::*;
-import PcieDescriptorTypes::*;
+import XilBdmaPcieTypes::*;
+import XilBdmaDmaTypes::*;
+import XilBdmaPcieAxiStreamTypes::*;
+import XilBdmaPrimUtils::*;
+import XilBdmaStreamUtils::*;
+import XilBdmaPcieDescriptorTypes::*;
 
 typedef TAdd#(1, TLog#(TDiv#(BUS_BOUNDARY, BYTE_EN_WIDTH))) DATA_BEATS_WIDTH;
 typedef Bit#(DATA_BEATS_WIDTH)                              DataBeats;                 

@@ -6,14 +6,14 @@ import FIFOF::*;
 import BRAM::*;
 import Connectable :: *;
 
-import DmaTypes::*;
-import StreamUtils::*;
-import SimpleModeUtils::*;
-import PcieDescriptorTypes::*;
-import PcieAxiStreamTypes::*;
-import PcieTypes::*;
-import PcieAdapter::*;
-import DmaH2CPipe::*;
+import XilBdmaDmaTypes::*;
+import XilBdmaStreamUtils::*;
+import XilBdmaSimpleModeUtils::*;
+import XilBdmaPcieDescriptorTypes::*;
+import XilBdmaPcieAxiStreamTypes::*;
+import XilBdmaPcieTypes::*;
+import XilBdmaPcieAdapter::*;
+import XilBdmaDmaH2CPipe::*;
 
 typedef 2'b10 TRANSLATED_ADDR_TYPE;
 

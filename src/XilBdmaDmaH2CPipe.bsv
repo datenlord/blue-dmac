@@ -5,13 +5,13 @@ import ClientServer::*;
 import Connectable :: *;
 
 import SemiFifo::*;
-import BdmaPrimUtils::*;
-import PcieAxiStreamTypes::*;
-import PcieTypes::*;
-import PcieDescriptorTypes::*;
-import PcieAdapter::*;
-import DmaTypes::*;
-import SimpleModeUtils::*;
+import XilBdmaPrimUtils::*;
+import XilBdmaPcieAxiStreamTypes::*;
+import XilBdmaPcieTypes::*;
+import XilBdmaPcieDescriptorTypes::*;
+import XilBdmaPcieAdapter::*;
+import XilBdmaDmaTypes::*;
+import XilBdmaSimpleModeUtils::*;
 import Probe :: *;
 
 typedef 1 IDEA_CQ_CSR_DWORD_CNT;

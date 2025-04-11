@@ -1,9 +1,9 @@
 import Vector::*;
 import FShow::*;
 import SemiFifo::*;
-import PcieTypes::*;
-import PcieAxiStreamTypes::*;
-import PcieDescriptorTypes::*;
+import XilBdmaPcieTypes::*;
+import XilBdmaPcieAxiStreamTypes::*;
+import XilBdmaPcieDescriptorTypes::*;
 
 typedef PCIE_AXIS_DATA_WIDTH DATA_WIDTH;
 

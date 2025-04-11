@@ -1,8 +1,8 @@
 import GetPut::*;
 import DReg::*;
-import PcieTypes::*;
-import PcieAxiStreamTypes::*;
-import DmaTypes::*;
+import XilBdmaPcieTypes::*;
+import XilBdmaPcieAxiStreamTypes::*;
+import XilBdmaDmaTypes::*;
 
 typedef 256 PCIE_CFG_VF_FLR_INPROC_EXTEND_WIDTH;
 
@@ -49,15 +49,15 @@ module mkPcieConfigurator(PcieConfigurator);
         cfgVFFlrFuncNumReg1 <= cfgVFFlrFuncNumReg;
     endrule
 
-    // rule updateFlowControlSelReg;
-    //     case (flowControlSelReg)
-    //         0: flowControlSelReg <= 2;
-    //         2: flowControlSelReg <= 4;
-    //         4: flowControlSelReg <= 5;
-    //         5: flowControlSelReg <= 6;
-    //         6: flowControlSelReg <= 0;
-    //     endcase
-    // endrule
+    rule updateFlowControlSelReg;
+        case (flowControlSelReg)
+            0: flowControlSelReg <= 2;
+            2: flowControlSelReg <= 4;
+            4: flowControlSelReg <= 5;
+            5: flowControlSelReg <= 6;
+            6: flowControlSelReg <= 0;
+        endcase
+    endrule
 
     method Action initCfg;
         TlpPayloadSize defaultTlpMaxSize = fromInteger(valueOf(DEFAULT_TLP_SIZE));

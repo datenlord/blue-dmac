@@ -6,14 +6,14 @@ import ClientServer::*;
 import Probe :: *;
 
 import SemiFifo::*;
-import BdmaPrimUtils::*;
-import StreamUtils::*;
-import PcieTypes::*;
-import DmaTypes::*;
-import PcieAxiStreamTypes::*;
-import PcieDescriptorTypes::*;
-import DmaUtils::*;
-import CompletionFifo::*;
+import XilBdmaPrimUtils::*;
+import XilBdmaStreamUtils::*;
+import XilBdmaPcieTypes::*;
+import XilBdmaDmaTypes::*;
+import XilBdmaPcieAxiStreamTypes::*;
+import XilBdmaPcieDescriptorTypes::*;
+import XilBdmaDmaUtils::*;
+import XilBdmaCompletionFifo::*;
 
 
 // Wrapper between original dma pipe and blue-rdma style interface

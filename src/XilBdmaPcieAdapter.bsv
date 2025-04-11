@@ -4,13 +4,13 @@ import Vector::*;
 import Probe :: *;
 
 import SemiFifo::*;
-import PcieTypes::*;
-import DmaTypes::*;
-import PcieAxiStreamTypes::*;
-import BdmaPrimUtils::*;
-import StreamUtils::*;
-import PcieDescriptorTypes::*;
-import CompletionFifo::*;
+import XilBdmaPcieTypes::*;
+import XilBdmaDmaTypes::*;
+import XilBdmaPcieAxiStreamTypes::*;
+import XilBdmaPrimUtils::*;
+import XilBdmaStreamUtils::*;
+import XilBdmaPcieDescriptorTypes::*;
+import XilBdmaCompletionFifo::*;
 
 typedef 64  CMPL_NPREQ_INFLIGHT_NUM;
 typedef 20  CMPL_NPREQ_WAITING_CLKS;

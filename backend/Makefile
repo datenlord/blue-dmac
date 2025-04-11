@@ -11,7 +11,7 @@ RUNTOPHASE ?= synth # synth place route all
 TARGETPLATFORM ?= vu13p
 # xcvu13p-fhgb2104-2-i, xcu200-fsgd2104-2-e
 PARTNAME = xcvu13p-fhgb2104-2-i
-TARGETFILE ?= ../src/DmaWrapper.bsv
+TARGETFILE ?= ../src/XilBdmaDmaWrapper.bsv
 #MODULE List: mkRawSimpleDmaController mkRawBypassDmaController mkRawTestDmaController
 TOPMODULE ?= mkRawTestDmaController
 

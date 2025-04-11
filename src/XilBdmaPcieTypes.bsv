@@ -1,6 +1,6 @@
 import Vector::*;
 
-import PcieAxiStreamTypes::*;
+import XilBdmaPcieAxiStreamTypes::*;
 
 typedef 512 PCIE_TLP_BYTES;
 typedef TLog#(PCIE_TLP_BYTES) PCIE_TLP_BYTES_WIDTH;

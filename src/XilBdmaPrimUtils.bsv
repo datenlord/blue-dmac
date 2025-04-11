@@ -1,8 +1,8 @@
 import FIFOF::*;
 import Vector::*;
 
-import PcieAxiStreamTypes::*;
-import DmaTypes::*;
+import XilBdmaPcieAxiStreamTypes::*;
+import XilBdmaDmaTypes::*;
 
 function Action immAssert(Bool condition, String assertName, Fmt assertFmtMsg);
     action

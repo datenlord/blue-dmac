@@ -4,12 +4,12 @@ import Vector::*;
 import FShow::*;
 
 import SemiFifo::*;
-import BdmaPrimUtils::*;
-import PcieAxiStreamTypes::*;
-import PcieTypes::*;
-import PcieDescriptorTypes::*;
-import DmaTypes::*;
-import DmaCompleter::*;
+import XilBdmaPrimUtils::*;
+import XilBdmaPcieAxiStreamTypes::*;
+import XilBdmaPcieTypes::*;
+import XilBdmaPcieDescriptorTypes::*;
+import XilBdmaDmaTypes::*;
+import XilBdmaDmaCompleter::*;
 import TestDmacVivado::*;
 
 typedef 'hABCD TEST_DATA; 

@@ -3,9 +3,9 @@ import SemiFifo::*;
 import LFSR::*;
 import Vector::*;
 
-import BdmaPrimUtils::*;
-import DmaTypes::*;
-import StreamUtils::*;
+import XilBdmaPrimUtils::*;
+import XilBdmaDmaTypes::*;
+import XilBdmaStreamUtils::*;
 
 typedef 0 LOG_DETAILS_EN;
 

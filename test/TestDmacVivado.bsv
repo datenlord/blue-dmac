@@ -3,9 +3,9 @@ import BRAM::*;
 import GetPut::*;
 
 import SemiFifo::*;
-import PcieTypes::*;
-import DmaTypes::*;  
-import DmaController::*;
+import XilBdmaPcieTypes::*;
+import XilBdmaDmaTypes::*;  
+import XilBdmaDmaController::*;
 
 typedef 16384 TEST_BRAM_SIZE;
 

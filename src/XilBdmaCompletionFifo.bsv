@@ -6,8 +6,8 @@ import Vector::*;
 import DReg::*;
 import Connectable::*;
 import BRAM :: *;
-import CpltBufferCf :: *;
-import PrioritySearchBuffer :: *;
+import XilBdmaCpltBufferCf :: *;
+import XilBdmaPrioritySearchBuffer :: *;
 
 import SemiFifo::*;
 

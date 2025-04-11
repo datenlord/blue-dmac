@@ -2,7 +2,7 @@ import Vector::*;
 import FIFOF::*;
 
 import SemiFifo::*;
-import DmaTypes::*;
+import XilBdmaDmaTypes::*;
 
 typedef 'hAB PSEUDO_DATA;
 typedef 8    PSEUDO_DATA_WIDTH;

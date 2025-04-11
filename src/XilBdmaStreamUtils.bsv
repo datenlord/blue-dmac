@@ -4,9 +4,9 @@ import GetPut::*;
 import Connectable::*;
 import SemiFifo::*;
 
-import BdmaPrimUtils::*;
-import DmaTypes::*;
-import PcieAxiStreamTypes::*;
+import XilBdmaPrimUtils::*;
+import XilBdmaDmaTypes::*;
+import XilBdmaPcieAxiStreamTypes::*;
 
 typedef 32 STREAM_SIZE_WIDTH;
 typedef UInt#(STREAM_SIZE_WIDTH) StreamSize;

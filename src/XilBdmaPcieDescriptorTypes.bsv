@@ -1,5 +1,5 @@
 
-import PcieAxiStreamTypes::*;
+import XilBdmaPcieAxiStreamTypes::*;
 
 typedef 64 RQ_DESCRIPTOR_WIDTH;
 typedef TDiv#(TSub#(PCIE_AXIS_DATA_WIDTH, RQ_DESCRIPTOR_WIDTH), DWORD_WIDTH) MAX_DWORD_CNT_OF_FIRST;
