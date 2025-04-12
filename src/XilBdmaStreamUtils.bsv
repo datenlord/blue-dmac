@@ -130,10 +130,10 @@ module mkStreamSplit(StreamSplit ifc);
     Reg#(StreamSize) streamByteCntReg <- mkReg(0);
 
     FIFOF#(StreamSize)    splitLocationFifo <- mkSizedFIFOF(valueOf(STREAM_SPLIT_INNER_LATENCY));
-    FIFOF#(DataStream)    inputFifo         <- mkFIFOF;
+    FIFOF#(DataStream)    inputFifo         <- mkLFIFOF;
     FIFOF#(DataStream)    outputFifo        <- mkFIFOF;
-    FIFOF#(StreamWithPtr) prepareFifo       <- mkFIFOF;
-    FIFOF#(StreamWithPtr) assertFifo        <- mkFIFOF;
+    FIFOF#(StreamWithPtr) prepareFifo       <- mkLFIFOF;
+    FIFOF#(StreamWithPtr) assertFifo        <- mkLFIFOF;
     FIFOF#(DataBytePtr)   splitPtrFifo      <- mkSizedFIFOF(valueOf(STREAM_SPLIT_INNER_LATENCY));
 
     Reg#(StreamWithPtr)   remainStreamWpReg <- mkRegU;
@@ -247,7 +247,7 @@ endmodule
 typedef 2 STREAM_SHIFT_LATENCY;
 
 module mkStreamShift#(DataBytePtr offset)(StreamPipe);
-    FIFOF#(DataStream) inFifo  <- mkFIFOF;
+    FIFOF#(DataStream) inFifo  <- mkLFIFOF;
     FIFOF#(DataStream) outFifo <- mkFIFOF;
 
     DataBytePtr resByte    = getMaxBytePtr - offset;
@@ -308,7 +308,7 @@ interface StreamShiftComplex;
 endinterface
 
 module mkStreamShiftComplex#(DataBytePtr offset)(StreamShiftComplex);
-    FIFOF#(DataStream) inFifo  <- mkFIFOF;
+    FIFOF#(DataStream) inFifo  <- mkLFIFOF;
     FIFOF#(Tuple2#(DataStream, DataStream)) outFifo <- mkFIFOF;
 
     DataBytePtr resByte    = getMaxBytePtr - offset;
@@ -379,7 +379,7 @@ endinterface
 typedef 2 STREAM_ALIGN_DW_LATENCY;
 
 module mkStreamShiftAlignToDw#(DataBytePtr offset)(StreamShiftAlignToDw);
-    FIFOF#(DataStream) dataInFifo     <- mkFIFOF;
+    FIFOF#(DataStream) dataInFifo     <- mkLFIFOF;
     // FIFOF#(DataStream) pipeFifo       <- mkFIFOF;
     FIFOF#(DataStream) dataOutFifo    <- mkFIFOF;
     FIFOF#(AlignDwMode) alignModeFifo <- mkFIFOF;
@@ -471,7 +471,7 @@ typedef 3 STREAM_HEADER_REMOVE_LATENCY;
 
 // Remove the first N Bytes of a stream
 module mkStreamHeaderRemove#(DataBytePtr headerLen)(StreamPipe);
-    FIFOF#(DataStream) inFifo  <- mkFIFOF;
+    FIFOF#(DataStream) inFifo  <- mkLFIFOF;
     FIFOF#(DataStream) outFifo <- mkFIFOF;
 
     Reg#(DataStream) remainStreamReg  <- mkReg(getEmptyStream);
@@ -616,7 +616,7 @@ typedef enum {
 
 // Only support one not full dataStream between streams
 module mkStreamReshape#(Bool debugEn)(StreamPipe);
-    FIFOF#(DataStream) inFifo  <- mkFIFOF;
+    FIFOF#(DataStream) inFifo  <- mkLFIFOF;
     FIFOF#(DataStream) outFifo <- mkFIFOF;
 
     //During Stream Varibles
@@ -772,7 +772,7 @@ endmodule
 typedef Bit#(DWORD_BYTES) DWordByteEn;
 
 module mkStreamRemoveFromDW(StreamPipe);
-    FIFOF#(DataStream) inFifo  <- mkFIFOF;
+    FIFOF#(DataStream) inFifo  <- mkLFIFOF;
     FIFOF#(DataStream) outFifo <- mkFIFOF;
 
     Reg#(DataStream)  remainStreamReg  <- mkReg(getEmptyStream);

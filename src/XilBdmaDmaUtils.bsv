@@ -167,7 +167,7 @@ interface ChunkSplit;
 endinterface
 
 module mkChunkSplit(TRXDirection direction, ChunkSplit ifc);
-    FIFOF#(DataStream)  dataInFifo       <- mkFIFOF;
+    FIFOF#(DataStream)  dataInFifo       <- mkLFIFOF;
     FIFOF#(DataStream)  chunkOutFifo     <- mkFIFOF;
     FIFOF#(DmaRequest)  reqOutFifo       <- mkFIFOF;
     FIFOF#(Bool)        doneFifo         <- mkFIFOF;

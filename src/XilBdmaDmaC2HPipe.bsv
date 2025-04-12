@@ -154,7 +154,7 @@ module mkDmaC2HPipe#(DmaPathNo pathIdx)(DmaC2HPipe);
     Reg#(Bool) isInitDoneReg <- mkReg(False);
     Reg#(Bool) isInWriteCoreOutputReg <- mkReg(False);
 
-    FIFOF#(DataStream) dataInFifo   <- mkFIFOF;
+    FIFOF#(DataStream) dataInFifo   <- mkLFIFOF;
     FIFOF#(DmaRequest) reqInFifo    <- mkFIFOF;
     FIFOF#(DataStream) tlpOutFifo   <- mkFIFOF;
     FIFOF#(RqSideBandSignal) tlpSideBandFifo <- mkFIFOF;
@@ -239,7 +239,7 @@ endinterface
 // Total Latency(Tlp Output): 1 + 2 + 1 + 1 = 5
 // Total Latency(Tlp Input) : 1\2 + 2 + n + 2 + 1 = 5/6 + n (depends on the order)
 module mkC2HReadCore#(DmaPathNo pathIdx)(C2HReadCore);
-    FIFOF#(StraddleStream) tlpInFifo      <- mkFIFOF;
+    FIFOF#(StraddleStream) tlpInFifo      <- mkLFIFOF;
     FIFOF#(DmaRequest)     reqInFifo      <- mkFIFOF;
     FIFOF#(DataStream)     tlpOutFifo     <- mkFIFOF;
     FIFOF#(RqSideBandSignal) tlpByteEnFifo  <- mkFIFOF;
@@ -526,7 +526,7 @@ endinterface
 
 // Total Latency: 1 + 3 + 2 + 1 = 7
 module mkC2HWriteCore#(DmaPathNo pathIdx)(C2HWriteCore);
-    FIFOF#(DataStream)     dataInFifo  <- mkFIFOF;
+    FIFOF#(DataStream)     dataInFifo  <- mkLFIFOF;
     FIFOF#(DmaRequest)     wrReqInFifo <- mkFIFOF;
     FIFOF#(DataStream)     dataOutFifo <- mkFIFOF;
     FIFOF#(RqSideBandSignal) byteEnOutFifo <- mkFIFOF;

@@ -106,7 +106,7 @@ endinterface
 (* synthesize *)
 module mkDmaH2CPipe(DmaH2CPipe);
     
-    FIFOF#(DataStream)  tlpInFifo    <- mkFIFOF;
+    FIFOF#(DataStream)  tlpInFifo    <- mkLFIFOF;
     FIFOF#(DataStream)  tlpOutFifo   <- mkFIFOF;
 
     FIFOF#(CsrRequest)   reqOutFifo   <- mkFIFOF;

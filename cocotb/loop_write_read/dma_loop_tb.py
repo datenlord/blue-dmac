@@ -36,10 +36,12 @@ async def throughput_test(dut, dev, mem):
    
     print(f"before=================={mem[10:15]}")
 
-    desc_transfer_szie = 1024
-    stride_size = 1024
+    desc_transfer_szie = 4096
+    stride_size = 4096
     strise_cnt = 32
 
+    double_channel_test_offset = 0                  # double channel test disabled
+    # double_channel_test_offset = 1024*512           # double channel test enabled
 
     dev_bar1 = dev.bar_window[1]
     await dev_bar1.write(0x04, (0).to_bytes(4, byteorder='little', signed=False))
@@ -52,7 +54,7 @@ async def throughput_test(dut, dev, mem):
     await dev_bar1.write(0x1C, (stride_size).to_bytes(4, byteorder='little', signed=False))
     await dev_bar1.write(0x20, (strise_cnt).to_bytes(4, byteorder='little', signed=False))
 
-    await dev_bar1.write(0x28, (1024*512).to_bytes(4, byteorder='little', signed=False))
+    await dev_bar1.write(0x28, (double_channel_test_offset).to_bytes(4, byteorder='little', signed=False))
 
     await dev_bar1.write(0x2c, (0x00).to_bytes(4, byteorder='little', signed=False))  # read write
     # await dev_bar1.write(0x2c, (0x01).to_bytes(4, byteorder='little', signed=False))  # read only

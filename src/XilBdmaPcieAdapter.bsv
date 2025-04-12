@@ -94,7 +94,7 @@ endinterface
 // Completer Only Receives and Transmits One Beat TLP, in which isFirst = isLast = True
 (* synthesize *)
 module mkCompleterAxiStreamAdapter(CompleterAxiStreamAdapter);
-    FIFOF#(DataStream) inFifo  <- mkFIFOF;
+    FIFOF#(DataStream) inFifo  <- mkLFIFOF;
     FIFOF#(DataStream) outFifo <- mkFIFOF;
     FIFOF#(CmplReqAxiStream)  reqInFifo   <- mkFIFOF;
     FIFOF#(CmplCmplAxiStream) cmplOutFifo <- mkFIFOF;
