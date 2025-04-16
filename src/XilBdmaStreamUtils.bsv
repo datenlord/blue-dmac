@@ -131,7 +131,7 @@ module mkStreamSplit(StreamSplit ifc);
 
     FIFOF#(StreamSize)    splitLocationFifo <- mkSizedFIFOF(valueOf(STREAM_SPLIT_INNER_LATENCY));
     FIFOF#(DataStream)    inputFifo         <- mkLFIFOF;
-    FIFOF#(DataStream)    outputFifo        <- mkFIFOF;
+    FIFOF#(DataStream)    outputFifo        <- mkLFIFOF;
     FIFOF#(StreamWithPtr) prepareFifo       <- mkLFIFOF;
     FIFOF#(StreamWithPtr) assertFifo        <- mkLFIFOF;
     FIFOF#(DataBytePtr)   splitPtrFifo      <- mkSizedFIFOF(valueOf(STREAM_SPLIT_INNER_LATENCY));
@@ -246,122 +246,122 @@ endmodule
 
 typedef 2 STREAM_SHIFT_LATENCY;
 
-module mkStreamShift#(DataBytePtr offset)(StreamPipe);
-    FIFOF#(DataStream) inFifo  <- mkLFIFOF;
-    FIFOF#(DataStream) outFifo <- mkFIFOF;
+// module mkStreamShift#(DataBytePtr offset)(StreamPipe);
+//     FIFOF#(DataStream) inFifo  <- mkLFIFOF;
+//     FIFOF#(DataStream) outFifo <- mkFIFOF;
 
-    DataBytePtr resByte    = getMaxBytePtr - offset;
-    DataBitPtr  offsetBits = zeroExtend(offset) << valueOf(BYTE_WIDTH_WIDTH);
-    DataBitPtr  resBits    = getMaxBitPtr - offsetBits;
+//     DataBytePtr resByte    = getMaxBytePtr - offset;
+//     DataBitPtr  offsetBits = zeroExtend(offset) << valueOf(BYTE_WIDTH_WIDTH);
+//     DataBitPtr  resBits    = getMaxBitPtr - offsetBits;
 
-    Reg#(DataStream) remainStreamReg <- mkReg(getEmptyStream);
-    Reg#(Bool)  hasLastRemainReg <- mkReg(False);
+//     Reg#(DataStream) remainStreamReg <- mkReg(getEmptyStream);
+//     Reg#(Bool)  hasLastRemainReg <- mkReg(False);
 
-    function Bool isShiftStreamLast(DataStream stream);
-        Bool isLast = False;
-        if (offset > 0 && offset < getMaxBytePtr) begin
-            isLast = stream.isLast && !unpack(stream.byteEn[resByte]);
-        end
-        else if (offset == 0) begin
-            isLast = stream.isLast;
-        end
-        else begin
-            isLast = False;
-        end
-        return isLast;
-    endfunction
+//     function Bool isShiftStreamLast(DataStream stream);
+//         Bool isLast = False;
+//         if (offset > 0 && offset < getMaxBytePtr) begin
+//             isLast = stream.isLast && !unpack(stream.byteEn[resByte]);
+//         end
+//         else if (offset == 0) begin
+//             isLast = stream.isLast;
+//         end
+//         else begin
+//             isLast = False;
+//         end
+//         return isLast;
+//     endfunction
 
-    rule execShift;
-        if (hasLastRemainReg) begin
-            outFifo.enq(remainStreamReg);
-            hasLastRemainReg <= False;
-            remainStreamReg <= getEmptyStream;
-        end
-        else begin
-            let stream = inFifo.first;
-            inFifo.deq;
-            let shiftStream = DataStream {
-                data    : (stream.data << offsetBits) | remainStreamReg.data,
-                byteEn  : (stream.byteEn << offset)   | remainStreamReg.byteEn,
-                isFirst : stream.isFirst,
-                isLast  : isShiftStreamLast(stream)
-            };
-            let remainStream = DataStream {
-                data    : stream.data >> resBits,
-                byteEn  : stream.byteEn >> resByte,
-                isFirst : False,
-                isLast  : True
-            };
-            outFifo.enq(shiftStream);
-            remainStreamReg  <= remainStream;
-            hasLastRemainReg <= stream.isLast && !isByteEnZero(remainStream.byteEn);
-        end
-    endrule
+//     rule execShift;
+//         if (hasLastRemainReg) begin
+//             outFifo.enq(remainStreamReg);
+//             hasLastRemainReg <= False;
+//             remainStreamReg <= getEmptyStream;
+//         end
+//         else begin
+//             let stream = inFifo.first;
+//             inFifo.deq;
+//             let shiftStream = DataStream {
+//                 data    : (stream.data << offsetBits) | remainStreamReg.data,
+//                 byteEn  : (stream.byteEn << offset)   | remainStreamReg.byteEn,
+//                 isFirst : stream.isFirst,
+//                 isLast  : isShiftStreamLast(stream)
+//             };
+//             let remainStream = DataStream {
+//                 data    : stream.data >> resBits,
+//                 byteEn  : stream.byteEn >> resByte,
+//                 isFirst : False,
+//                 isLast  : True
+//             };
+//             outFifo.enq(shiftStream);
+//             remainStreamReg  <= remainStream;
+//             hasLastRemainReg <= stream.isLast && !isByteEnZero(remainStream.byteEn);
+//         end
+//     endrule
 
-    interface streamFifoIn  = convertFifoToFifoIn(inFifo);
-    interface streamFifoOut = convertFifoToFifoOut(outFifo);
-endmodule
+//     interface streamFifoIn  = convertFifoToFifoIn(inFifo);
+//     interface streamFifoOut = convertFifoToFifoOut(outFifo);
+// endmodule
 
-interface StreamShiftComplex;
-    interface FifoIn#(DataStream)  streamFifoIn;
-    interface FifoOut#(Tuple2#(DataStream, DataStream)) streamFifoOut;
-endinterface
+// interface StreamShiftComplex;
+//     interface FifoIn#(DataStream)  streamFifoIn;
+//     interface FifoOut#(Tuple2#(DataStream, DataStream)) streamFifoOut;
+// endinterface
 
-module mkStreamShiftComplex#(DataBytePtr offset)(StreamShiftComplex);
-    FIFOF#(DataStream) inFifo  <- mkLFIFOF;
-    FIFOF#(Tuple2#(DataStream, DataStream)) outFifo <- mkFIFOF;
+// module mkStreamShiftComplex#(DataBytePtr offset)(StreamShiftComplex);
+//     FIFOF#(DataStream) inFifo  <- mkLFIFOF;
+//     FIFOF#(Tuple2#(DataStream, DataStream)) outFifo <- mkFIFOF;
 
-    DataBytePtr resByte    = getMaxBytePtr - offset;
-    DataBitPtr  offsetBits = zeroExtend(offset) << valueOf(BYTE_WIDTH_WIDTH);
-    DataBitPtr  resBits    = getMaxBitPtr - offsetBits;
+//     DataBytePtr resByte    = getMaxBytePtr - offset;
+//     DataBitPtr  offsetBits = zeroExtend(offset) << valueOf(BYTE_WIDTH_WIDTH);
+//     DataBitPtr  resBits    = getMaxBitPtr - offsetBits;
 
-    Reg#(DataStream) remainStreamReg <- mkReg(getEmptyStream);
-    Reg#(Bool)  hasLastRemainReg <- mkReg(False);
+//     Reg#(DataStream) remainStreamReg <- mkReg(getEmptyStream);
+//     Reg#(Bool)  hasLastRemainReg <- mkReg(False);
 
-    function Bool isShiftStreamLast(DataStream stream);
-        Bool isLast = False;
-        if (offset > 0 && offset < getMaxBytePtr) begin
-            isLast = stream.isLast && !unpack(stream.byteEn[resByte]);
-        end
-        else if (offset == 0) begin
-            isLast = stream.isLast;
-        end
-        else begin
-            isLast = False;
-        end
-        return isLast;
-    endfunction
+//     function Bool isShiftStreamLast(DataStream stream);
+//         Bool isLast = False;
+//         if (offset > 0 && offset < getMaxBytePtr) begin
+//             isLast = stream.isLast && !unpack(stream.byteEn[resByte]);
+//         end
+//         else if (offset == 0) begin
+//             isLast = stream.isLast;
+//         end
+//         else begin
+//             isLast = False;
+//         end
+//         return isLast;
+//     endfunction
 
-    rule execShift;
-        if (hasLastRemainReg) begin
-            outFifo.enq(tuple2(getEmptyStream, remainStreamReg));
-            hasLastRemainReg <= False;
-            remainStreamReg <= getEmptyStream;
-        end
-        else begin
-            let stream = inFifo.first;
-            inFifo.deq;
-            let shiftStream = DataStream {
-                data    : (stream.data << offsetBits) | remainStreamReg.data,
-                byteEn  : (stream.byteEn << offset)   | remainStreamReg.byteEn,
-                isFirst : stream.isFirst,
-                isLast  : isShiftStreamLast(stream)
-            };
-            let remainStream = DataStream {
-                data    : stream.data >> resBits,
-                byteEn  : stream.byteEn >> resByte,
-                isFirst : False,
-                isLast  : True
-            };
-            outFifo.enq(tuple2(stream, shiftStream));
-            remainStreamReg  <= remainStream;
-            hasLastRemainReg <= stream.isLast && !isByteEnZero(remainStream.byteEn);
-        end
-    endrule
+//     rule execShift;
+//         if (hasLastRemainReg) begin
+//             outFifo.enq(tuple2(getEmptyStream, remainStreamReg));
+//             hasLastRemainReg <= False;
+//             remainStreamReg <= getEmptyStream;
+//         end
+//         else begin
+//             let stream = inFifo.first;
+//             inFifo.deq;
+//             let shiftStream = DataStream {
+//                 data    : (stream.data << offsetBits) | remainStreamReg.data,
+//                 byteEn  : (stream.byteEn << offset)   | remainStreamReg.byteEn,
+//                 isFirst : stream.isFirst,
+//                 isLast  : isShiftStreamLast(stream)
+//             };
+//             let remainStream = DataStream {
+//                 data    : stream.data >> resBits,
+//                 byteEn  : stream.byteEn >> resByte,
+//                 isFirst : False,
+//                 isLast  : True
+//             };
+//             outFifo.enq(tuple2(stream, shiftStream));
+//             remainStreamReg  <= remainStream;
+//             hasLastRemainReg <= stream.isLast && !isByteEnZero(remainStream.byteEn);
+//         end
+//     endrule
 
-    interface streamFifoIn  = convertFifoToFifoIn(inFifo);
-    interface streamFifoOut = convertFifoToFifoOut(outFifo);
-endmodule
+//     interface streamFifoIn  = convertFifoToFifoIn(inFifo);
+//     interface streamFifoOut = convertFifoToFifoOut(outFifo);
+// endmodule
 
 typedef enum {
     Align0 = 0,
@@ -381,7 +381,7 @@ typedef 2 STREAM_ALIGN_DW_LATENCY;
 module mkStreamShiftAlignToDw#(DataBytePtr offset)(StreamShiftAlignToDw);
     FIFOF#(DataStream) dataInFifo     <- mkLFIFOF;
     // FIFOF#(DataStream) pipeFifo       <- mkFIFOF;
-    FIFOF#(DataStream) dataOutFifo    <- mkFIFOF;
+    FIFOF#(DataStream) dataOutFifo    <- mkLFIFOF;
     FIFOF#(AlignDwMode) alignModeFifo <- mkFIFOF;
 
     Reg#(DataStream)   remainStreamReg  <- mkReg(getEmptyStream);
