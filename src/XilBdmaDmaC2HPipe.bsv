@@ -249,8 +249,8 @@ module mkC2HReadCore#(DmaPathNo pathIdx)(C2HReadCore);
     FIFOF#(DmaReadReqCnt)  inflightFifo    <- mkSizedFIFOF(valueOf(SLOT_PER_PATH));
 
 
-    StreamPipe     descRemove     <- mkStreamHeaderRemove(fromInteger(valueOf(TDiv#(DES_RC_DESCRIPTOR_WIDTH, BYTE_WIDTH)))); 
-    StreamPipe     dwRemove       <- mkStreamRemoveFromDW;
+    // StreamPipe     descRemove     <- mkStreamHeaderRemove(fromInteger(valueOf(TDiv#(DES_RC_DESCRIPTOR_WIDTH, BYTE_WIDTH)))); 
+    StreamPipe     dwRemove       <- mkStreamRemoveDescAndDW(fromInteger(valueOf(TDiv#(DES_RC_DESCRIPTOR_WIDTH, BYTE_WIDTH))));
     StreamPipe     reshapeStrad   <- mkStreamReshape(pathIdx == 0);
     StreamPipe     reshapeRcb     <- mkStreamReshape(False);
     StreamPipe     reshapeMrrs    <- mkStreamReshape(False);
@@ -263,8 +263,11 @@ module mkC2HReadCore#(DmaPathNo pathIdx)(C2HReadCore);
     Reg#(DmaReadReqCnt)          rcvReqCntReg  <- mkReg(1);
     Vector#(SLOT_PER_PATH, Reg#(Bool)) chunkFlagRegs <- replicateM(mkReg(False));
 
-    mkConnection(reshapeStrad.streamFifoOut, descRemove.streamFifoIn);
-    mkConnection(descRemove.streamFifoOut, dwRemove.streamFifoIn);
+    // mkConnection(reshapeStrad.streamFifoOut, descRemove.streamFifoIn);
+    // mkConnection(descRemove.streamFifoOut, dwRemove.streamFifoIn);
+    mkConnection(reshapeStrad.streamFifoOut, dwRemove.streamFifoIn);
+
+
     mkConnection(chunkSplitor.reqCntFifoOut, inflightFifo);
     Reg#(Bit#(8)) rcbBlockCntDebugReg <- mkReg(0);
     Probe#(Bit#(8)) rcbBlockCntDebugRegProbe <- mkProbe;
